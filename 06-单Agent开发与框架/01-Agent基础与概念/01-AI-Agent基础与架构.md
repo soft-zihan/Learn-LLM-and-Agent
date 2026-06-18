@@ -1,6 +1,6 @@
 # AI Agent 基础与架构
 
-> 📅 **更新时间**: 2026-06-17  
+> 📅 **更新时间**: 2026-06-18  
 
 ---
 
@@ -10,6 +10,7 @@
 - [2. 单 Agent 工作流](#2-单-agent-工作流)
 - [3. LangChain Agent 开发](#3-langchain-agent-开发)
 - [4. LangGraph 单 Agent 状态图](#4-langgraph-单-agent-状态图)
+- [5. 规划与推理](#5-规划与推理)
 
 ---
 
@@ -3314,6 +3315,868 @@ class ProductionCheckpointManager:
 
 # 使用生产级检查点
 production_saver = ProductionCheckpointManager(sqlite_saver)
+```
+
+---
+
+## 5. 规划与推理
+
+> 📌 **说明**: 本章节内容来自原"Agent设计模式"文档的规划与推理部分，已整合至本文件作为架构模式的补充。
+
+## 3. 规划与推理
+
+### 3.1 任务规划
+
+#### 目标分解
+
+```python
+# 智能任务分解
+
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, Field
+from typing import List
+import json
+
+llm = ChatOpenAI(model="gpt-5.2", temperature=0)
+
+class SubTask(BaseModel):
+    """子任务"""
+    id: int = Field(description="任务 ID")
+    description: str = Field(description="任务描述")
+    required_tools: List[str] = Field(description="需要的工具")
+    estimated_complexity: int = Field(description="预估复杂度 1-5", ge=1, le=5)
+    dependencies: List[int] = Field(description="依赖的任务 ID", default_factory=list)
+    success_criteria: str = Field(description="成功标准")
+
+class TaskPlan(BaseModel):
+    """任务计划"""
+    goal: str = Field(description="目标")
+    subtasks: List[SubTask] = Field(description="子任务列表")
+    execution_order: List[int] = Field(description="执行顺序")
+    estimated_total_time: str = Field(description="预估总时间")
+    risks: List[str] = Field(description="潜在风险", default_factory=list)
+
+# 任务分解 Prompt
+task_decomposition_prompt = ChatPromptTemplate.from_messages([
+    ("system", """你是一个专业的任务规划专家。请将复杂目标分解为可执行的子任务。
+
+分解原则：
+1. **MECE 原则**：相互独立，完全穷尽
+2. **原子性**：每个子任务应该是不可再分的原子操作
+3. **可验证性**：每个子任务应该有明确的完成标准
+4. **可并行性**：识别可以并行执行的任务
+5. **依赖关系**：明确任务间的依赖
+
+输出格式为 JSON，包含：
+- goal: 目标描述
+- subtasks: 子任务列表
+- execution_order: 执行顺序
+- estimated_total_time: 预估总时间
+- risks: 潜在风险"""),
+    ("human", "目标：{goal}\n\n可用工具：{tools}")
+])
+
+# 使用结构化输出
+decomposer = task_decomposition_prompt | llm.with_structured_output(TaskPlan)
+
+# 使用示例
+def decompose_task(goal: str, available_tools: List[str]) -> TaskPlan:
+    """分解任务"""
+    tools_text = "\n".join([f"- {tool}" for tool in available_tools])
+    
+    plan = decomposer.invoke({
+        "goal": goal,
+        "tools": tools_text
+    })
+    
+    return plan
+
+# 执行分解
+goal = "分析公司 2024 年销售数据，生成可视化报告并提出改进建议"
+tools = ["database_query", "data_analysis", "chart_generation", "report_writing"]
+
+plan = decompose_task(goal, tools)
+
+print(f"目标：{plan.goal}")
+print(f"\n子任务：")
+for task in plan.subtasks:
+    print(f"  {task.id}. {task.description}")
+    print(f"     工具：{', '.join(task.required_tools)}")
+    print(f"     依赖：{task.dependencies}")
+    print(f"     复杂度：{task.estimated_complexity}")
+    print(f"     成功标准：{task.success_criteria}")
+
+print(f"\n执行顺序：{plan.execution_order}")
+print(f"预估时间：{plan.estimated_total_time}")
+print(f"风险：{plan.risks}")
+```
+
+#### 步骤生成
+
+```python
+# 动态步骤生成
+
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+
+class StepGenerator:
+    """步骤生成器"""
+    
+    def __init__(self, llm):
+        self.llm = llm
+    
+    def generate_steps(
+        self,
+        task: str,
+        completed_steps: List[dict] = None,
+        context: dict = None
+    ) -> dict:
+        """生成下一步"""
+        prompt = f"""
+当前任务：{task}
+
+已完成步骤：
+{self._format_steps(completed_steps)}
+
+上下文信息：
+{json.dumps(context or {}, ensure_ascii=False, indent=2)}
+
+请决定：
+1. 下一步应该做什么？
+2. 需要使用什么工具？
+3. 工具的参数是什么？
+4. 预期的结果是什么？
+
+输出 JSON：
+```json
+{{
+    "next_step": "步骤描述",
+    "tool": "工具名称",
+    "tool_input": {{}},
+    "expected_output": "预期结果",
+    "reason": "选择此步骤的原因",
+    "is_final_step": true/false
+}}
+```
+"""
+        
+        response = self.llm.invoke([HumanMessage(content=prompt)])
+        
+        try:
+            json_str = response.content.split("```json")[1].split("```")[0]
+            return json.loads(json_str.strip())
+        except:
+            return {
+                "next_step": "完成任务",
+                "tool": None,
+                "is_final_step": True
+            }
+    
+    def _format_steps(self, steps: List[dict]) -> str:
+        """格式化已完成的步骤"""
+        if not steps:
+            return "无"
+        
+        return "\n".join([
+            f"{i+1}. {step.get('description', '未知')} - {'成功' if step.get('success') else '失败'}"
+            for i, step in enumerate(steps)
+        ])
+
+# 使用示例
+generator = StepGenerator(llm)
+
+task = "查询北京天气并生成报告"
+completed_steps = []
+context = {"user_location": "北京"}
+
+# 动态生成步骤
+for i in range(10):
+    step = generator.generate_steps(task, completed_steps, context)
+    
+    print(f"\n步骤 {i+1}: {step['next_step']}")
+    print(f"工具：{step.get('tool')}")
+    print(f"原因：{step.get('reason')}")
+    
+    # 模拟执行
+    completed_steps.append({
+        "description": step["next_step"],
+        "success": True
+    })
+    
+    if step.get("is_final_step"):
+        print("\n任务完成！")
+        break
+```
+
+#### 资源评估
+
+```python
+# 资源评估与成本估算
+
+class ResourceEstimator:
+    """资源评估器"""
+    
+    def __init__(self, llm):
+        self.llm = llm
+    
+    def estimate_resources(self, task_plan: TaskPlan) -> dict:
+        """评估资源需求"""
+        prompt = f"""
+请评估以下任务计划所需的资源：
+
+目标：{task_plan.goal}
+子任务数量：{len(task_plan.subtasks)}
+总预估时间：{task_plan.estimated_total_time}
+
+子任务详情：
+{json.dumps([t.dict() for t in task_plan.subtasks], ensure_ascii=False, indent=2)}
+
+请评估：
+1. **LLM 调用次数**：预估需要调用多少次 LLM
+2. **Token 消耗**：预估总 token 数量
+3. **工具调用次数**：各工具调用次数
+4. **执行时间**：实际执行时间（考虑并行）
+5. **成本估算**：按 $0.01/1K tokens 计算
+
+输出 JSON：
+```json
+{{
+    "llm_calls": 10,
+    "estimated_tokens": 50000,
+    "tool_calls": {{
+        "tool1": 5,
+        "tool2": 3
+    }},
+    "estimated_execution_minutes": 15,
+    "estimated_cost_usd": 0.50,
+    "optimization_suggestions": ["优化建议"]
+}}
+```
+"""
+        
+        response = self.llm.invoke([HumanMessage(content=prompt)])
+        
+        try:
+            json_str = response.content.split("```json")[1].split("```")[0]
+            return json.loads(json_str.strip())
+        except:
+            return {"error": "评估失败"}
+
+# 使用示例
+estimator = ResourceEstimator(llm)
+resources = estimator.estimate_resources(plan)
+
+print(f"LLM 调用次数：{resources['llm_calls']}")
+print(f"预估 Token 消耗：{resources['estimated_tokens']}")
+print(f"预估执行时间：{resources['estimated_execution_minutes']} 分钟")
+print(f"预估成本：${resources['estimated_cost_usd']}")
+print(f"优化建议：{resources['optimization_suggestions']}")
+```
+
+#### 风险识别
+
+```python
+# 风险识别与应对策略
+
+class RiskAnalyzer:
+    """风险分析器"""
+    
+    def __init__(self, llm):
+        self.llm = llm
+    
+    def analyze_risks(self, task_plan: TaskPlan) -> List[dict]:
+        """分析风险"""
+        prompt = f"""
+请分析以下任务计划的潜在风险：
+
+{json.dumps(task_plan.dict(), ensure_ascii=False, indent=2)}
+
+对每个风险，请评估：
+1. 风险描述
+2. 发生概率（低/中/高）
+3. 影响程度（低/中/高）
+4. 应对策略
+5. 检测信号（如何识别风险已发生）
+
+输出 JSON 数组：
+```json
+[
+    {{
+        "risk": "风险描述",
+        "probability": "低/中/高",
+        "impact": "低/中/高",
+        "mitigation": "应对策略",
+        "warning_signs": ["检测信号"]
+    }}
+]
+```
+"""
+        
+        response = self.llm.invoke([HumanMessage(content=prompt)])
+        
+        try:
+            json_str = response.content.split("```json")[1].split("```")[0]
+            return json.loads(json_str.strip())
+        except:
+            return []
+
+# 使用示例
+analyzer = RiskAnalyzer(llm)
+risks = analyzer.analyze_risks(plan)
+
+print("风险分析：")
+for risk in risks:
+    print(f"\n风险：{risk['risk']}")
+    print(f"概率：{risk['probability']}")
+    print(f"影响：{risk['impact']}")
+    print(f"应对：{risk['mitigation']}")
+    print(f"预警：{', '.join(risk['warning_signs'])}")
+```
+
+### 3.2 自我反思
+
+#### 错误识别
+
+```python
+# 错误识别与诊断
+
+from langchain_core.prompts import ChatPromptTemplate
+
+error_diagnosis_prompt = ChatPromptTemplate.from_messages([
+    ("system", """你是一个错误诊断专家。请分析以下执行过程中的错误。
+
+任务：{task}
+执行步骤：{steps}
+错误信息：{error}
+
+请从以下维度分析：
+1. **错误类型**：语法错误、逻辑错误、资源错误、超时等
+2. **根本原因**：导致错误的根本原因
+3. **影响范围**：错误影响了哪些部分
+4. **修复建议**：如何修复错误
+5. **预防措施**：如何避免类似错误
+
+输出 JSON：
+```json
+{{
+    "error_type": "错误类型",
+    "root_cause": "根本原因",
+    "impact": "影响范围",
+    "fix_suggestion": "修复建议",
+    "prevention": "预防措施",
+    "severity": "low/medium/high/critical",
+    "can_retry": true/false
+}}
+```"""),
+    ("human", "请分析错误")
+])
+
+error_diagnoser = error_diagnosis_prompt | llm
+
+class ErrorDiagnoser:
+    """错误诊断器"""
+    
+    def __init__(self, llm):
+        self.llm = llm
+        self.diagnoser = error_diagnosis_prompt | llm
+    
+    def diagnose(
+        self,
+        task: str,
+        steps: List[dict],
+        error: str
+    ) -> dict:
+        """诊断错误"""
+        steps_text = json.dumps(steps, ensure_ascii=False, indent=2)
+        
+        response = self.diagnoser.invoke({
+            "task": task,
+            "steps": steps_text,
+            "error": error
+        })
+        
+        try:
+            json_str = response.content.split("```json")[1].split("```")[0]
+            return json.loads(json_str.strip())
+        except:
+            return {
+                "error_type": "unknown",
+                "root_cause": "诊断失败",
+                "can_retry": False
+            }
+    
+    def auto_fix(self, diagnosis: dict, original_step: dict) -> dict:
+        """自动生成修复方案"""
+        fix_prompt = f"""
+基于以下错误诊断，生成修复后的步骤：
+
+原始步骤：{json.dumps(original_step, ensure_ascii=False)}
+诊断结果：{json.dumps(diagnosis, ensure_ascii=False)}
+
+请输出修复后的步骤（JSON）：
+"""
+        
+        response = self.llm.invoke([HumanMessage(content=fix_prompt)])
+        
+        try:
+            json_str = response.content.split("```json")[1].split("```")[0]
+            return json.loads(json_str.strip())
+        except:
+            return original_step
+
+# 使用示例
+diagnoser = ErrorDiagnoser(llm)
+
+task = "查询数据库并生成报告"
+steps = [
+    {"action": "查询数据库", "status": "success"},
+    {"action": "分析数据", "status": "failed"}
+]
+error = "数据库连接超时"
+
+diagnosis = diagnoser.diagnose(task, steps, error)
+print(f"错误类型：{diagnosis['error_type']}")
+print(f"根本原因：{diagnosis['root_cause']}")
+print(f"严重程度：{diagnosis['severity']}")
+print(f"是否可重试：{diagnosis['can_retry']}")
+print(f"修复建议：{diagnosis['fix_suggestion']}")
+```
+
+#### 策略调整
+
+```python
+# 策略调整与优化
+
+class StrategyAdjuster:
+    """策略调整器"""
+    
+    def __init__(self, llm):
+        self.llm = llm
+        self.execution_history: List[dict] = []
+    
+    def record_execution(self, task: str, plan: dict, result: dict):
+        """记录执行"""
+        self.execution_history.append({
+            "task": task,
+            "plan": plan,
+            "result": result,
+            "timestamp": time.time()
+        })
+    
+    def suggest_improvements(self, task: str) -> dict:
+        """基于历史执行建议改进"""
+        # 查找类似任务
+        similar_tasks = [
+            exec for exec in self.execution_history
+            if self._similarity(exec["task"], task) > 0.7
+        ]
+        
+        if not similar_tasks:
+            return {"suggestions": ["无历史数据可供参考"]}
+        
+        # 分析失败案例
+        failures = [
+            exec for exec in similar_tasks
+            if not exec["result"].get("success", True)
+        ]
+        
+        if not failures:
+            return {"suggestions": ["历史执行都很成功，保持当前策略"]}
+        
+        # LLM 分析改进建议
+        analysis_prompt = f"""
+分析以下失败案例，提出改进策略：
+
+失败案例：
+{json.dumps(failures[:3], ensure_ascii=False, indent=2)}
+
+请提出：
+1. 策略调整建议
+2. 工具选择优化
+3. 错误处理改进
+4. 资源分配优化
+
+输出 JSON：
+"""
+        
+        response = self.llm.invoke([HumanMessage(content=analysis_prompt)])
+        
+        try:
+            json_str = response.content.split("```json")[1].split("```")[0]
+            return json.loads(json_str.strip())
+        except:
+            return {"suggestions": ["分析失败"]}
+    
+    def _similarity(self, task1: str, task2: str) -> float:
+        """计算任务相似度（简化版）"""
+        words1 = set(task1.lower().split())
+        words2 = set(task2.lower().split())
+        
+        if not words1 or not words2:
+            return 0
+        
+        intersection = words1 & words2
+        union = words1 | words2
+        
+        return len(intersection) / len(union)
+
+# 使用示例
+adjuster = StrategyAdjuster(llm)
+
+# 记录执行历史
+adjuster.record_execution(
+    "查询数据",
+    {"tools": ["database"]},
+    {"success": False, "error": "超时"}
+)
+
+# 获取改进建议
+suggestions = adjuster.suggest_improvements("查询销售数据")
+print(f"改进建议：{suggestions}")
+```
+
+#### 经验积累
+
+```python
+# 经验积累与知识库
+
+import json
+from pathlib import Path
+
+class ExperienceBase:
+    """经验知识库"""
+    
+    def __init__(self, persist_file: str = "./experiences.json"):
+        self.persist_file = persist_file
+        self.experiences: List[dict] = []
+        self._load()
+    
+    def add_experience(
+        self,
+        task: str,
+        strategy: dict,
+        outcome: dict,
+        lessons: List[str]
+    ):
+        """添加经验"""
+        experience = {
+            "task": task,
+            "strategy": strategy,
+            "outcome": outcome,
+            "lessons": lessons,
+            "timestamp": time.time(),
+            "success_count": 1 if outcome.get("success") else 0,
+            "failure_count": 0 if outcome.get("success") else 1
+        }
+        
+        self.experiences.append(experience)
+        self._save()
+    
+    def query_experiences(self, task: str, limit: int = 5) -> List[dict]:
+        """查询相关经验"""
+        # 简化：关键词匹配
+        keywords = set(task.lower().split())
+        
+        scored = []
+        for exp in self.experiences:
+            exp_keywords = set(exp["task"].lower().split())
+            similarity = len(keywords & exp_keywords) / len(keywords | exp_keywords)
+            scored.append((similarity, exp))
+        
+        # 按相似度排序
+        scored.sort(key=lambda x: x[0], reverse=True)
+        
+        return [exp for _, exp in scored[:limit]]
+    
+    def get_best_practices(self) -> List[dict]:
+        """获取最佳实践"""
+        # 筛选成功率高的经验
+        high_success = [
+            exp for exp in self.experiences
+            if exp["success_count"] > 0 and exp["failure_count"] == 0
+        ]
+        
+        return high_success
+    
+    def _save(self):
+        """保存"""
+        with open(self.persist_file, "w", encoding="utf-8") as f:
+            json.dump(self.experiences, f, ensure_ascii=False, indent=2)
+    
+    def _load(self):
+        """加载"""
+        if Path(self.persist_file).exists():
+            with open(self.persist_file, "r", encoding="utf-8") as f:
+                self.experiences = json.load(f)
+
+# 使用示例
+experience_db = ExperienceBase()
+
+# 添加经验
+experience_db.add_experience(
+    task="数据库查询优化",
+    strategy={"use_cache": True, "batch_size": 100},
+    outcome={"success": True, "execution_time": 5.2},
+    lessons=["使用缓存可以显著提升性能", "批量大小 100 是最佳平衡点"]
+)
+
+# 查询经验
+experiences = experience_db.query_experiences("数据库查询")
+for exp in experiences:
+    print(f"任务：{exp['task']}")
+    print(f"经验：{', '.join(exp['lessons'])}")
+    print("---")
+```
+
+### 3.3 思维链应用
+
+#### Zero-shot CoT
+
+```python
+# Zero-shot Chain-of-Thought
+
+from langchain_core.prompts import ChatPromptTemplate
+
+zero_shot_cot_prompt = ChatPromptTemplate.from_messages([
+    ("system", "你是一个逻辑推理专家。请一步步思考，展示你的推理过程。"),
+    ("human", "{question}\n\n请一步步思考：")
+])
+
+zero_shot_cot = zero_shot_cot_prompt | llm
+
+# 使用示例
+question = "如果 3 个人 3 天可以完成 3 个项目，那么 9 个人 9 天可以完成多少个项目？"
+
+response = zero_shot_cot.invoke({"question": question})
+print(response.content)
+# 输出会包含详细的推理步骤
+```
+
+#### Few-shot CoT
+
+```python
+# Few-shot Chain-of-Thought
+
+few_shot_cot_prompt = ChatPromptTemplate.from_messages([
+    ("system", "你是一个逻辑推理专家。请参考示例，一步步推理。"),
+    
+    # 示例 1
+    ("human", "问题：一个农场有 100 只鸡，每天增加 5 只，30 天后有多少只？"),
+    ("ai", """让我一步步思考：
+
+1. 初始数量：100 只
+2. 每天增加：5 只
+3. 天数：30 天
+4. 总增加：5 × 30 = 150 只
+5. 最终数量：100 + 150 = 250 只
+
+答案：250 只"""),
+    
+    # 示例 2
+    ("human", "问题：列车以 60km/h 速度行驶，2.5 小时行驶多远？"),
+    ("ai", """让我一步步思考：
+
+1. 速度：60 km/h
+2. 时间：2.5 小时
+3. 距离 = 速度 × 时间
+4. 距离 = 60 × 2.5 = 150 km
+
+答案：150 公里"""),
+    
+    # 用户问题
+    ("human", "问题：{question}\n\n请一步步思考：")
+])
+
+few_shot_cot = few_shot_cot_prompt | llm
+
+# 使用示例
+question = "如果 5 台机器 5 分钟可以生产 5 个零件，100 台机器生产 100 个零件需要多长时间？"
+response = few_shot_cot.invoke({"question": question})
+print(response.content)
+```
+
+#### Self-Consistency
+
+```python
+# Self-Consistency：多次采样取一致
+
+from typing import List
+from collections import Counter
+
+class SelfConsistencyCoT:
+    """Self-Consistency CoT"""
+    
+    def __init__(self, llm, num_samples: int = 5):
+        self.llm = llm
+        self.num_samples = num_samples
+        self.cot_chain = few_shot_cot_prompt | llm
+    
+    def reason(self, question: str) -> dict:
+        """推理"""
+        # 多次采样
+        responses = []
+        for i in range(self.num_samples):
+            response = self.cot_chain.invoke({"question": question})
+            responses.append(response.content)
+        
+        # 提取答案（简化：假设答案在最后）
+        answers = []
+        for resp in responses:
+            lines = resp.strip().split("\n")
+            for line in reversed(lines):
+                if "答案" in line or "answer" in line.lower():
+                    answers.append(line)
+                    break
+        
+        # 投票
+        if answers:
+            counter = Counter(answers)
+            most_common = counter.most_common(1)[0]
+            
+            return {
+                "question": question,
+                "all_responses": responses,
+                "all_answers": answers,
+                "final_answer": most_common[0],
+                "confidence": most_common[1] / self.num_samples,
+                "vote_distribution": dict(counter)
+            }
+        else:
+            return {
+                "question": question,
+                "all_responses": responses,
+                "final_answer": "无法确定答案",
+                "confidence": 0
+            }
+
+# 使用示例
+sc_cot = SelfConsistencyCoT(llm, num_samples=5)
+
+question = "一个水箱有两个水管，A 管单独注水需要 6 小时，B 管单独注水需要 4 小时，两管同时注水需要多长时间？"
+result = sc_cot.reason(question)
+
+print(f"问题：{result['question']}")
+print(f"最终答案：{result['final_answer']}")
+print(f"置信度：{result['confidence']:.2%}")
+print(f"投票分布：{result['vote_distribution']}")
+```
+
+#### Tree of Thoughts
+
+```python
+# Tree of Thoughts（思维树）
+
+from typing import List, Optional
+import heapq
+
+class ThoughtNode:
+    """思维节点"""
+    def __init__(self, thought: str, score: float = 0, depth: int = 0):
+        self.thought = thought
+        self.score = score
+        self.depth = depth
+        self.children: List["ThoughtNode"] = []
+        self.parent: Optional["ThoughtNode"] = None
+    
+    def add_child(self, child: "ThoughtNode"):
+        child.parent = self
+        self.children.append(child)
+    
+    def __lt__(self, other):
+        return self.score < other.score
+
+class TreeOfThoughts:
+    """思维树"""
+    
+    def __init__(self, llm, max_depth: int = 3, branch_factor: int = 3):
+        self.llm = llm
+        self.max_depth = max_depth
+        self.branch_factor = branch_factor
+        self.root = None
+    
+    def solve(self, problem: str) -> dict:
+        """解决问题"""
+        # 创建根节点
+        self.root = ThoughtNode(f"问题：{problem}", score=0, depth=0)
+        
+        # BFS 搜索
+        best_solution = self._search()
+        
+        return {
+            "problem": problem,
+            "solution": best_solution.thought if best_solution else "未找到解决方案",
+            "solution_score": best_solution.score if best_solution else 0
+        }
+    
+    def _search(self) -> Optional[ThoughtNode]:
+        """搜索最佳解决方案"""
+        # 优先队列（按分数排序）
+        queue = [-self.root]  # 负数实现最大堆
+        best_node = None
+        best_score = -float("inf")
+        
+        while queue:
+            # 取出最高分节点
+            current = -heapq.heappop(queue)
+            
+            # 更新最佳节点
+            if current.score > best_score:
+                best_score = current.score
+                best_node = current
+            
+            # 如果达到最大深度，跳过
+            if current.depth >= self.max_depth:
+                continue
+            
+            # 生成子节点
+            children = self._generate_thoughts(current)
+            
+            for child in children:
+                current.add_child(child)
+                heapq.heappush(queue, -child)
+        
+        return best_node
+    
+    def _generate_thoughts(self, node: ThoughtNode) -> List[ThoughtNode]:
+        """生成下一步思维"""
+        prompt = f"""
+当前思维：{node.thought}
+
+请生成 {self.branch_factor} 个可能的下一步思维，并为每个思维评分（0-1）。
+
+输出 JSON：
+```json
+[
+    {{
+        "thought": "思维内容",
+        "score": 0.8
+    }}
+]
+```
+"""
+        
+        response = self.llm.invoke([HumanMessage(content=prompt)])
+        
+        try:
+            json_str = response.content.split("```json")[1].split("```")[0]
+            thoughts = json.loads(json_str.strip())
+            
+            return [
+                ThoughtNode(t["thought"], score=t["score"], depth=node.depth + 1)
+                for t in thoughts
+            ]
+        except:
+            return []
+
+# 使用示例
+tot = TreeOfThoughts(llm, max_depth=3, branch_factor=3)
+
+problem = "如何优化一个电商网站的加载速度？"
+result = tot.solve(problem)
+
+print(f"问题：{result['problem']}")
+print(f"最佳解决方案：{result['solution']}")
+print(f"评分：{result['solution_score']}")
 ```
 
 ---

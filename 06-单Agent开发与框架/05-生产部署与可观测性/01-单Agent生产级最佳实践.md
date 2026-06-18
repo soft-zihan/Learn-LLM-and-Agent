@@ -1,6 +1,6 @@
 # 单Agent生产级最佳实践
 
-> 📅 **更新时间**: 2026-06-17  
+> 📅 **更新时间**: 2026-06-18  
 
 ---
 
@@ -13,7 +13,8 @@
 - [5. 部署与运维](#5-部署与运维)
 - [6. 监控与告警](#6-监控与告警)
 - [7. 测试策略](#7-测试策略)
-- [8. 参考资料](#8-参考资料)
+- [8. 生产级进阶实践](#8-生产级进阶实践)
+- [9. 参考资料](#9-参考资料)
 
 ---
 
@@ -1271,9 +1272,842 @@ class TestProductionAgent:
 
 ---
 
-> 📅 **最后更新**: 2026-06
-> 📊 **难度等级**: Level 4-5（高级-专家）
-> 🔗 **相关文档**: 
-> - [Agent 工具集成](./01-Agent工具集成实战.md)
-> - [单 Agent 开发框架](../01-单Agent开发框架/README.md)
-> - [生产部署指南](../../04-推理与部署/02-生产部署/README.md)
+## 8. 生产级进阶实践
+
+> 📌 **说明**: 本章节来自原"工作流编排与LangGraph"文档的生产级最佳实践部分，已整合至本文件。
+## 4. 生产级最佳实践
+
+### 2.1 错误处理
+
+#### 优雅降级
+
+```python
+# 优雅降级策略
+
+from typing import Optional
+
+class GracefulDegradation:
+    """优雅降级管理器"""
+    
+    def __init__(self, llm):
+        self.llm = llm
+        self.degradation_levels = [
+            "full_functionality",  # 完整功能
+            "limited_tools",       # 有限工具
+            "llm_only",           # 仅 LLM
+            "cached_response",    # 缓存响应
+            "error_message"       # 错误消息
+        ]
+    
+    def execute_with_degradation(self, agent_executor, user_input: str) -> dict:
+        """带降级的执行"""
+        # Level 0: 完整功能
+        try:
+            result = agent_executor.invoke({"input": user_input})
+            return {
+                "success": True,
+                "result": result,
+                "degradation_level": "full_functionality"
+            }
+        except Exception as e:
+            logger.warning(f"完整功能失败：{e}")
+        
+        # Level 1: 有限工具（移除复杂工具）
+        try:
+            limited_executor = self._create_limited_executor()
+            result = limited_executor.invoke({"input": user_input})
+            return {
+                "success": True,
+                "result": result,
+                "degradation_level": "limited_tools",
+                "warning": "部分工具不可用"
+            }
+        except Exception as e:
+            logger.warning(f"有限工具失败：{e}")
+        
+        # Level 2: 仅 LLM
+        try:
+            response = self.llm.invoke([HumanMessage(content=user_input)])
+            return {
+                "success": True,
+                "result": {"output": response.content},
+                "degradation_level": "llm_only",
+                "warning": "工具不可用，仅使用 LLM"
+            }
+        except Exception as e:
+            logger.error(f"LLM 失败：{e}")
+        
+        # Level 3: 缓存响应
+        cached = self._get_cached_response(user_input)
+        if cached:
+            return {
+                "success": True,
+                "result": {"output": cached},
+                "degradation_level": "cached_response",
+                "warning": "使用缓存响应"
+            }
+        
+        # Level 4: 错误消息
+        return {
+            "success": False,
+            "result": {
+                "output": "抱歉，服务暂时不可用，请稍后重试。"
+            },
+            "degradation_level": "error_message",
+            "error": "所有降级策略都失败"
+        }
+    
+    def _create_limited_executor(self):
+        """创建有限工具执行器"""
+        # 移除复杂工具，保留基础工具
+        limited_tools = [tool for tool in tools if tool.name in ["search", "calculator"]]
+        limited_agent = create_react_agent(llm, limited_tools, prompt)
+        return AgentExecutor(agent=limited_agent, tools=limited_tools)
+    
+    def _get_cached_response(self, user_input: str) -> Optional[str]:
+        """获取缓存响应"""
+        # 实现缓存查找逻辑
+        return None
+
+# 使用示例
+degradation_mgr = GracefulDegradation(llm)
+result = degradation_mgr.execute_with_degradation(executor, "用户请求")
+
+print(f"成功：{result['success']}")
+print(f"降级级别：{result['degradation_level']}")
+if result.get("warning"):
+    print(f"警告：{result['warning']}")
+```
+
+#### 用户反馈
+
+```python
+# 用户反馈收集与处理
+
+from typing import Optional
+
+class FeedbackCollector:
+    """反馈收集器"""
+    
+    def __init__(self):
+        self.feedbacks: List[dict] = []
+    
+    def collect_feedback(
+        self,
+        task: str,
+        response: str,
+        rating: int,  # 1-5
+        comment: str = "",
+        user_id: str = ""
+    ):
+        """收集反馈"""
+        feedback = {
+            "task": task,
+            "response": response,
+            "rating": rating,
+            "comment": comment,
+            "user_id": user_id,
+            "timestamp": time.time()
+        }
+        
+        self.feedbacks.append(feedback)
+        
+        # 低评分触发告警
+        if rating <= 2:
+            self._trigger_alert(feedback)
+    
+    def get_feedback_stats(self) -> dict:
+        """获取反馈统计"""
+        if not self.feedbacks:
+            return {}
+        
+        ratings = [f["rating"] for f in self.feedbacks]
+        
+        import numpy as np
+        return {
+            "total_feedbacks": len(self.feedbacks),
+            "average_rating": float(np.mean(ratings)),
+            "rating_distribution": {
+                str(i): ratings.count(i) for i in range(1, 6)
+            },
+            "low_rating_rate": sum(1 for r in ratings if r <= 2) / len(ratings)
+        }
+    
+    def get_improvement_suggestions(self) -> List[str]:
+        """获取改进建议（从低评分反馈）"""
+        low_feedbacks = [f for f in self.feedbacks if f["rating"] <= 2]
+        
+        if not low_feedbacks:
+            return ["当前反馈都很积极"]
+        
+        # LLM 分析
+        analysis_prompt = f"""
+分析以下用户反馈，提取主要问题和改进建议：
+
+{json.dumps(low_feedbacks[:10], ensure_ascii=False, indent=2)}
+
+输出 JSON 数组：
+["改进建议 1", "改进建议 2"]
+"""
+        
+        response = llm.invoke([HumanMessage(content=analysis_prompt)])
+        
+        try:
+            json_str = response.content.split("```json")[1].split("```")[0]
+            return json.loads(json_str.strip())
+        except:
+            return ["分析失败"]
+    
+    def _trigger_alert(self, feedback: dict):
+        """触发告警"""
+        logger.warning(
+            f"收到低评分反馈：{feedback['rating']}星\n"
+            f"任务：{feedback['task']}\n"
+            f"评论：{feedback['comment']}"
+        )
+
+# 使用示例
+feedback_collector = FeedbackCollector()
+
+# 收集反馈
+feedback_collector.collect_feedback(
+    task="查询天气",
+    response="北京晴天，25°C",
+    rating=4,
+    comment="回答简洁，但可以更多信息",
+    user_id="user_001"
+)
+
+# 查看统计
+stats = feedback_collector.get_feedback_stats()
+print(f"平均评分：{stats.get('average_rating', 0):.2f}")
+
+# 获取改进建议
+suggestions = feedback_collector.get_improvement_suggestions()
+print(f"改进建议：{suggestions}")
+```
+
+### 2.2 安全控制
+
+#### 工具权限
+
+```python
+# 工具权限管理
+
+from enum import Enum
+from typing import Set
+
+class PermissionLevel(Enum):
+    READ = "read"
+    WRITE = "write"
+    ADMIN = "admin"
+    DANGEROUS = "dangerous"
+
+class ToolPermissionManager:
+    """工具权限管理器"""
+    
+    def __init__(self):
+        self.tool_permissions: dict = {
+            "search": PermissionLevel.READ,
+            "calculator": PermissionLevel.READ,
+            "weather": PermissionLevel.READ,
+            "database_query": PermissionLevel.READ,
+            "database_update": PermissionLevel.WRITE,
+            "database_delete": PermissionLevel.ADMIN,
+            "file_read": PermissionLevel.READ,
+            "file_write": PermissionLevel.WRITE,
+            "file_delete": PermissionLevel.DANGEROUS,
+            "system_command": PermissionLevel.DANGEROUS
+        }
+        
+        self.user_permissions: dict = {}  # 用户权限
+    
+    def set_user_permission(self, user_id: str, max_level: PermissionLevel):
+        """设置用户权限"""
+        self.user_permissions[user_id] = max_level
+    
+    def check_permission(self, user_id: str, tool_name: str) -> bool:
+        """检查权限"""
+        if tool_name not in self.tool_permissions:
+            return False
+        
+        required_level = self.tool_permissions[tool_name]
+        user_level = self.user_permissions.get(user_id, PermissionLevel.READ)
+        
+        # 权限等级排序
+        permission_order = [
+            PermissionLevel.READ,
+            PermissionLevel.WRITE,
+            PermissionLevel.ADMIN,
+            PermissionLevel.DANGEROUS
+        ]
+        
+        user_level_idx = permission_order.index(user_level)
+        required_level_idx = permission_order.index(required_level)
+        
+        return user_level_idx >= required_level_idx
+    
+    def filter_tools_by_permission(self, user_id: str, tools: list) -> list:
+        """根据权限过滤工具"""
+        return [
+            tool for tool in tools
+            if self.check_permission(user_id, tool.name)
+        ]
+
+# 使用示例
+permission_mgr = ToolPermissionManager()
+
+# 设置用户权限
+permission_mgr.set_user_permission("user_basic", PermissionLevel.READ)
+permission_mgr.set_user_permission("user_admin", PermissionLevel.ADMIN)
+
+# 检查权限
+can_search = permission_mgr.check_permission("user_basic", "search")
+can_delete = permission_mgr.check_permission("user_basic", "file_delete")
+
+print(f"普通用户可搜索：{can_search}")
+print(f"普通用户可删除：{can_delete}")
+```
+
+#### 输入验证
+
+```python
+# 输入验证与过滤
+
+import re
+from typing import Set
+
+class InputValidator:
+    """输入验证器"""
+    
+    def __init__(self):
+        self.blocked_patterns = [
+            r"DELETE\s+FROM",  # SQL 注入
+            r"DROP\s+TABLE",
+            r"<script>",  # XSS
+            r"javascript:",
+            r"rm\s+-rf",  # 危险命令
+            r"sudo\s+"
+        ]
+        
+        self.max_input_length = 1000
+        self.blocked_keywords = [
+            "password", "secret", "token",  # 敏感词
+            "delete all", "drop database"
+        ]
+    
+    def validate(self, user_input: str) -> dict:
+        """验证输入"""
+        issues = []
+        
+        # 长度检查
+        if len(user_input) > self.max_input_length:
+            issues.append(f"输入过长（最大 {self.max_input_length} 字符）")
+        
+        # 模式检查
+        for pattern in self.blocked_patterns:
+            if re.search(pattern, user_input, re.IGNORECASE):
+                issues.append(f"检测到危险模式：{pattern}")
+        
+        # 关键词检查
+        input_lower = user_input.lower()
+        for keyword in self.blocked_keywords:
+            if keyword in input_lower:
+                issues.append(f"检测到敏感词：{keyword}")
+        
+        return {
+            "valid": len(issues) == 0,
+            "issues": issues,
+            "sanitized_input": self._sanitize(user_input)
+        }
+    
+    def _sanitize(self, text: str) -> str:
+        """清理输入"""
+        # 移除危险字符
+        text = re.sub(r'[<>"\']', '', text)
+        # 限制长度
+        return text[:self.max_input_length]
+
+# 使用示例
+validator = InputValidator()
+
+# 正常输入
+result1 = validator.validate("查询北京天气")
+print(f"有效：{result1['valid']}")
+
+# 恶意输入
+result2 = validator.validate("DELETE FROM users; DROP TABLE")
+print(f"有效：{result2['valid']}")
+print(f"问题：{result2['issues']}")
+```
+
+#### 输出审核
+
+```python
+# 输出内容审核
+
+class OutputModerator:
+    """输出审核器"""
+    
+    def __init__(self, llm):
+        self.llm = llm
+    
+    def moderate(self, output: str) -> dict:
+        """审核输出"""
+        prompt = f"""
+请审核以下 AI 输出是否合适：
+
+{output}
+
+审核标准：
+1. 是否包含不当内容（暴力、色情、歧视）
+2. 是否泄露敏感信息
+3. 是否有事实错误
+4. 是否有潜在风险
+
+输出 JSON：
+```json
+{{
+    "safe": true/false,
+    "issues": ["问题列表"],
+    "confidence": 0.9,
+    "suggestion": "修改建议"
+}}
+```
+"""
+        
+        response = self.llm.invoke([HumanMessage(content=prompt)])
+        
+        try:
+            json_str = response.content.split("```json")[1].split("```")[0]
+            return json.loads(json_str.strip())
+        except:
+            return {
+                "safe": True,
+                "issues": [],
+                "confidence": 0.5,
+                "suggestion": ""
+            }
+
+# 使用示例
+moderator = OutputModerator(llm)
+
+output = "这是一个正常的回答"
+moderation = moderator.moderate(output)
+
+if not moderation["safe"]:
+    print(f"输出不安全：{moderation['issues']}")
+    print(f"建议：{moderation['suggestion']}")
+```
+
+### 2.3 性能优化
+
+#### 缓存策略
+
+```python
+# 多级缓存策略
+
+from typing import Optional
+import time
+import hashlib
+
+class MultiLevelCache:
+    """多级缓存"""
+    
+    def __init__(self):
+        # L1：内存缓存（最快，容量小）
+        self.l1_cache: dict = {}
+        self.l1_max_size = 100
+        self.l1_ttl = 300  # 5 分钟
+        
+        # L2：本地文件缓存（较快，容量中）
+        self.l2_cache_dir = "./cache/l2"
+        Path(self.l2_cache_dir).mkdir(parents=True, exist_ok=True)
+        self.l2_ttl = 3600  # 1 小时
+        
+        # L3：远程缓存（慢，容量大）
+        # 可以使用 Redis 等
+        
+        self.stats = {"l1_hits": 0, "l2_hits": 0, "misses": 0}
+    
+    def get(self, key: str) -> Optional[str]:
+        """获取缓存"""
+        # L1 查找
+        if key in self.l1_cache:
+            cache_data = self.l1_cache[key]
+            if time.time() - cache_data["timestamp"] < self.l1_ttl:
+                self.stats["l1_hits"] += 1
+                return cache_data["value"]
+            else:
+                del self.l1_cache[key]
+        
+        # L2 查找
+        l2_value = self._get_from_l2(key)
+        if l2_value:
+            self.stats["l2_hits"] += 1
+            # 升级到 L1
+            self._set_to_l1(key, l2_value)
+            return l2_value
+        
+        self.stats["misses"] += 1
+        return None
+    
+    def set(self, key: str, value: str):
+        """设置缓存"""
+        self._set_to_l1(key, value)
+        self._set_to_l2(key, value)
+    
+    def _set_to_l1(self, key: str, value: str):
+        """设置 L1 缓存"""
+        # 检查大小限制
+        if len(self.l1_cache) >= self.l1_max_size:
+            # 删除最旧的
+            oldest_key = min(
+                self.l1_cache.keys(),
+                key=lambda k: self.l1_cache[k]["timestamp"]
+            )
+            del self.l1_cache[oldest_key]
+        
+        self.l1_cache[key] = {
+            "value": value,
+            "timestamp": time.time()
+        }
+    
+    def _get_from_l2(self, key: str) -> Optional[str]:
+        """从 L2 获取"""
+        file_path = f"{self.l2_cache_dir}/{self._hash_key(key)}.json"
+        
+        if not Path(file_path).exists():
+            return None
+        
+        try:
+            with open(file_path, "r") as f:
+                data = json.load(f)
+            
+            if time.time() - data["timestamp"] < self.l2_ttl:
+                return data["value"]
+            else:
+                Path(file_path).unlink()
+                return None
+        except:
+            return None
+    
+    def _set_to_l2(self, key: str, value: str):
+        """设置 L2 缓存"""
+        file_path = f"{self.l2_cache_dir}/{self._hash_key(key)}.json"
+        
+        data = {
+            "value": value,
+            "timestamp": time.time()
+        }
+        
+        with open(file_path, "w") as f:
+            json.dump(data, f)
+    
+    def _hash_key(self, key: str) -> str:
+        """哈希键"""
+        return hashlib.md5(key.encode()).hexdigest()
+    
+    def get_stats(self) -> dict:
+        """获取统计"""
+        total = self.stats["l1_hits"] + self.stats["l2_hits"] + self.stats["misses"]
+        hit_rate = (self.stats["l1_hits"] + self.stats["l2_hits"]) / total if total > 0 else 0
+        
+        return {
+            **self.stats,
+            "total_requests": total,
+            "hit_rate": hit_rate
+        }
+
+# 使用示例
+cache = MultiLevelCache()
+
+# 设置缓存
+cache.set("query:天气", "北京晴天")
+
+# 获取缓存
+value = cache.get("query:天气")
+print(f"缓存值：{value}")
+
+# 查看统计
+print(f"缓存统计：{cache.get_stats()}")
+```
+
+#### 并发控制
+
+```python
+# 并发控制与限流
+
+import asyncio
+from asyncio import Semaphore
+from typing import Callable
+
+class ConcurrencyController:
+    """并发控制器"""
+    
+    def __init__(self, max_concurrent: int = 10, rate_limit: int = 100):
+        self.semaphore = Semaphore(max_concurrent)
+        self.rate_limit = rate_limit  # 每分钟请求数
+        self.request_times: list = []
+    
+    async def execute_with_limit(self, func: Callable, *args, **kwargs):
+        """限流执行"""
+        # 并发控制
+        async with self.semaphore:
+            # 速率限制
+            await self._wait_for_rate_limit()
+            
+            # 执行
+            if asyncio.iscoroutinefunction(func):
+                return await func(*args, **kwargs)
+            else:
+                loop = asyncio.get_event_loop()
+                return await loop.run_in_executor(None, func, *args, **kwargs)
+    
+    async def _wait_for_rate_limit(self):
+        """等待速率限制"""
+        now = time.time()
+        
+        # 清理 1 分钟前的记录
+        self.request_times = [t for t in self.request_times if now - t < 60]
+        
+        # 检查是否超限
+        if len(self.request_times) >= self.rate_limit:
+            wait_time = 60 - (now - self.request_times[0])
+            if wait_time > 0:
+                await asyncio.sleep(wait_time)
+        
+        self.request_times.append(now)
+
+# 使用示例
+controller = ConcurrencyController(max_concurrent=5, rate_limit=60)
+
+async def concurrent_execution():
+    """并发执行示例"""
+    async def task(i):
+        async def mock_api():
+            await asyncio.sleep(1)
+            return f"结果 {i}"
+        
+        return await controller.execute_with_limit(mock_api)
+    
+    # 并发执行 20 个任务
+    tasks = [task(i) for i in range(20)]
+    results = await asyncio.gather(*tasks)
+    
+    print(f"完成 {len(results)} 个任务")
+
+# asyncio.run(concurrent_execution())
+```
+
+### 2.4 可观测性
+
+#### 链路追踪
+
+```python
+# 完整的链路追踪
+
+from typing import Optional
+import uuid
+
+class TraceSpan:
+    """追踪 Span"""
+    def __init__(self, name: str, parent_id: Optional[str] = None):
+        self.trace_id = str(uuid.uuid4())
+        self.span_id = str(uuid.uuid4())
+        self.parent_id = parent_id
+        self.name = name
+        self.start_time = time.time()
+        self.end_time: Optional[float] = None
+        self.attributes: dict = {}
+        self.status: str = "ok"
+        self.error: Optional[str] = None
+    
+    def end(self):
+        """结束 Span"""
+        self.end_time = time.time()
+    
+    def duration(self) -> float:
+        """获取持续时间"""
+        if self.end_time:
+            return self.end_time - self.start_time
+        return time.time() - self.start_time
+    
+    def to_dict(self) -> dict:
+        return {
+            "trace_id": self.trace_id,
+            "span_id": self.span_id,
+            "parent_id": self.parent_id,
+            "name": self.name,
+            "start_time": self.start_time,
+            "end_time": self.end_time,
+            "duration": self.duration(),
+            "attributes": self.attributes,
+            "status": self.status,
+            "error": self.error
+        }
+
+class Tracer:
+    """链路追踪器"""
+    
+    def __init__(self):
+        self.spans: List[TraceSpan] = []
+        self.current_span: Optional[TraceSpan] = None
+    
+    def start_span(self, name: str) -> TraceSpan:
+        """开始 Span"""
+        parent_id = self.current_span.span_id if self.current_span else None
+        span = TraceSpan(name, parent_id)
+        self.spans.append(span)
+        self.current_span = span
+        return span
+    
+    def end_span(self):
+        """结束当前 Span"""
+        if self.current_span:
+            self.current_span.end()
+            # 回到父 Span
+            parent_id = self.current_span.parent_id
+            if parent_id:
+                self.current_span = next(
+                    (s for s in self.spans if s.span_id == parent_id),
+                    None
+                )
+            else:
+                self.current_span = None
+    
+    def visualize_trace(self, trace_id: str) -> str:
+        """可视化链路"""
+        spans = [s for s in self.spans if s.trace_id == trace_id]
+        
+        visualization = f"Trace: {trace_id}\n"
+        visualization += "=" * 60 + "\n"
+        
+        for span in spans:
+            indent = "  " * (self._get_depth(span))
+            status_icon = "✓" if span.status == "ok" else "✗"
+            
+            visualization += f"{indent}{status_icon} {span.name}\n"
+            visualization += f"{indent}  耗时：{span.duration()*1000:.2f}ms\n"
+            
+            if span.error:
+                visualization += f"{indent}  错误：{span.error}\n"
+        
+        return visualization
+    
+    def _get_depth(self, span: TraceSpan) -> int:
+        """获取 Span 深度"""
+        depth = 0
+        current = span
+        while current.parent_id:
+            depth += 1
+            current = next(
+                (s for s in self.spans if s.span_id == current.parent_id),
+                None
+            )
+        return depth
+
+# 使用示例
+tracer = Tracer()
+
+# 模拟链路
+root_span = tracer.start_span("agent_execution")
+llm_span = tracer.start_span("llm_call")
+tracer.end_span()
+tool_span = tracer.start_span("tool_execution")
+tracer.end_span()
+tracer.end_span()
+
+# 可视化
+print(tracer.visualize_trace(root_span.trace_id))
+```
+
+#### 告警机制
+
+```python
+# 智能告警系统
+
+from typing import Callable
+
+class AlertManager:
+    """告警管理器"""
+    
+    def __init__(self):
+        self.alert_rules: list = []
+        self.alert_history: list = []
+    
+    def add_rule(
+        self,
+        name: str,
+        condition: Callable,
+        severity: str = "warning",
+        callback: Callable = None
+    ):
+        """添加告警规则"""
+        self.alert_rules.append({
+            "name": name,
+            "condition": condition,
+            "severity": severity,
+            "callback": callback
+        })
+    
+    def check_rules(self, metrics: dict):
+        """检查规则"""
+        for rule in self.alert_rules:
+            if rule["condition"](metrics):
+                self._trigger_alert(rule, metrics)
+    
+    def _trigger_alert(self, rule: dict, metrics: dict):
+        """触发告警"""
+        alert = {
+            "rule": rule["name"],
+            "severity": rule["severity"],
+            "metrics": metrics,
+            "timestamp": time.time()
+        }
+        
+        self.alert_history.append(alert)
+        
+        # 记录日志
+        logger.error(
+            f"告警触发：{rule['name']} "
+            f"（{rule['severity']}）"
+        )
+        
+        # 执行回调
+        if rule.get("callback"):
+            rule["callback"](alert)
+    
+    def get_recent_alerts(self, hours: int = 24) -> list:
+        """获取近期告警"""
+        cutoff = time.time() - hours * 3600
+        return [a for a in self.alert_history if a["timestamp"] > cutoff]
+
+# 使用示例
+alert_mgr = AlertManager()
+
+# 添加规则
+alert_mgr.add_rule(
+    name="high_error_rate",
+    condition=lambda m: m.get("error_rate", 0) > 0.1,
+    severity="critical",
+    callback=lambda alert: print(f"严重告警：{alert}")
+)
+
+alert_mgr.add_rule(
+    name="slow_response",
+    condition=lambda m: m.get("avg_response_time", 0) > 5.0,
+    severity="warning"
+)
+
+# 检查规则
+metrics = {
+    "error_rate": 0.15,
+    "avg_response_time": 6.5
+}
+
+alert_mgr.check_rules(metrics)
+```
+
+---
+

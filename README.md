@@ -243,6 +243,8 @@
   - 单 Agent 工作流
   - LangChain Agent 开发
   - LangGraph 单 Agent 状态图
+  - 规划与推理
+  - 规划与推理
 </details>
 <details>
 <summary>- 02-Agent设计模式</summary>
@@ -250,11 +252,81 @@
   - 工具使用深度实践
   - 规划与推理
 </details>
+<details>
+<summary>- 02-上下文工程与记忆系统</summary>
+  - 什么是上下文工程
+  - 为什么需要上下文工程
+  - 上下文的解剖学
+  - GSSC 流程
+  - JIT 上下文检索
+  - 长期任务的上下文管理
+  - 上下文工程实战
+  - 最佳实践与常见陷阱
+  - 总结
+  - 为什么 Agent 需要记忆
+  - 从人类记忆到 Agent 记忆
+  - 记忆系统架构设计
+  - 2026年主流记忆方案对比
+  - 实战：构建记忆系统
+  - 记忆与 MCP 集成
+  - 记忆系统最佳实践与常见陷阱
+  - 总结
+</details>
+
+**02-Agent工具与协议**
+<details>
+<summary>- 01-工具调用与集成实战</summary>
+  - 工具调用基础概念
+  - OpenAI Function Calling
+  - Anthropic Tool Use
+  - Google Gemini Function Calling
+  - 开源模型工具调用
+  - LangChain 工具系统
+  - 高级工具调用技术
+  - 生产级工具调用
+  - MCP（Model Context Protocol）
+  - 工具调用评测与基准
+  - 参考资料
+  - 工具调用基础
+  - 工具实现模式
+  - 工具调用流程
+  - 错误处理与重试
+  - 工具编排与组合
+  - 工具测试与调试
+  - 性能优化
+  - 参考资料
+</details>
+<details>
+<summary>- 02-MCP协议详解与Server开发</summary>
+  - MCP 协议基础概念
+  - MCP 2026-07-28 规范重大更新
+  - MCP 协议详解
+  - MCP Server 开发（Python）
+  - MCP Server 开发（TypeScript）
+  - MCP Server 开发（Go）
+  - MCP Client 集成
+  - MCP 2026-07-28 新特性速查
+  - 更多实战场景
+  - 生态工具
+  - 前沿技术
+  - 参考资料
+  - MCP 2026-07-28 安全与生产部署更新
+</details>
+<details>
+<summary>- 03-Skills范式与实战</summary>
+  - Skills 开发最佳实践
+  - Inputs
+  - Decision Tree
+  - Main Workflow
+  - Output Files
+  - Non-Negotiables
+  - 安全与权限控制
+  - 生产部署
+</details>
 
 **02-Agent核心组件**
 <details>
 <summary>- 01-工具调用基础与主流API</summary>
-  - 工具调用基础概念
   - 工具调用基础概念
   - OpenAI Function Calling
   - Anthropic Tool Use
@@ -280,7 +352,29 @@
   - 总结
 </details>
 <details>
-<summary>- 04-RAG</summary>
+<summary>- 05-Memory</summary>
+  - 为什么 Agent 需要记忆
+  - 从人类记忆到 Agent 记忆
+  - 记忆系统架构设计
+  - 2026年主流记忆方案对比
+  - 实战：构建记忆系统
+  - 记忆与 MCP 集成
+  - 最佳实践与常见陷阱
+  - 总结
+</details>
+
+**03-Agent框架与编排**
+<details>
+<summary>- 01-LangChain与LangGraph实践</summary>
+  - LangChain v1.0 核心变化与概念
+  - LangGraph v1.0 状态图与工作流编排
+  - 多 Agent 协作模式
+  - 最新特性与最佳实践（2025-2026）
+  - 实战案例：智能代码审查 Agent
+  - 参考资源
+</details>
+<details>
+<summary>- 02-RAG进阶与Agentic-RAG</summary>
   - RAG 技术演进
   - 文档处理与分割
   - 向量数据库选型
@@ -292,17 +386,6 @@
   - 实战案例
   - 最佳实践与陷阱
   - 参考资料
-</details>
-<details>
-<summary>- 05-Memory</summary>
-  - 为什么 Agent 需要记忆
-  - 从人类记忆到 Agent 记忆
-  - 记忆系统架构设计
-  - 2026年主流记忆方案对比
-  - 实战：构建记忆系统
-  - 记忆与 MCP 集成
-  - 最佳实践与常见陷阱
-  - 总结
 </details>
 
 **03-Agent运行模式**
@@ -336,15 +419,33 @@
   - 总结
 </details>
 
-**04-Agent开发框架**
+**04-Agent运行模式与工程化**
 <details>
-<summary>- 01-LangChain与LangGraph实践</summary>
-  - LangChain v1.0 核心变化与概念
-  - LangGraph v1.0 状态图与工作流编排
-  - 多 Agent 协作模式
-  - 最新特性与最佳实践（2025-2026）
-  - 实战案例：智能代码审查 Agent
-  - 参考资源
+<summary>- 01-Harness-Engineering</summary>
+  - Harness Engineering 基础
+  - 核心组件
+  - AGENTS.md 与项目配置实战
+  - Minimal Harness 实战
+  - Superpowers 框架深度解析
+  - 高级 Harness 模式
+  - 验证与测试策略
+  - 可观测性与调试
+  - 生产级 Harness 设计
+  - 实战项目
+  - 项目概述
+  - 技术栈
+</details>
+<details>
+<summary>- 02-Loop-Engineering</summary>
+  - 从 Harness 到 Loop 的演进
+  - Loop Engineering 五大核心组件
+  - 生成器-评估器-规划器架构
+  - Loop 实战模式
+  - Loop 的风险与治理
+  - Token 成本优化实战
+  - 最佳实践
+  - 总结：构建 Loop，但保持你是工程师
+  - 参考链接
 </details>
 
 **05-Agent工程化**
@@ -377,8 +478,10 @@
   - 最佳实践
   - 参考链接
 </details>
+
+**05-生产部署与可观测性**
 <details>
-<summary>- 04-单Agent生产级最佳实践</summary>
+<summary>- 01-单Agent生产级最佳实践</summary>
   - 生产环境架构设计
   - 错误处理与恢复
   - 性能优化
@@ -386,6 +489,16 @@
   - 部署与运维
   - 监控与告警
   - 测试策略
+  - 参考资料
+</details>
+<details>
+<summary>- 02-Agent测试与可观测性工程</summary>
+  - Agent 测试策略
+  - 可观测性工程
+  - 性能测试
+  - 安全测试
+  - 监控仪表板
+  - 告警规则
   - 参考资料
 </details>
 
@@ -399,18 +512,6 @@
   - 工具编排与组合
   - 工具测试与调试
   - 性能优化
-  - 参考资料
-</details>
-
-**07-测试与可观测性**
-<details>
-<summary>- 01-Agent测试与可观测性工程</summary>
-  - Agent 测试策略
-  - 可观测性工程
-  - 性能测试
-  - 安全测试
-  - 监控仪表板
-  - 告警规则
   - 参考资料
 </details>
 
@@ -606,6 +707,6 @@
 python3 update-readme
 ```
 
-**统计**：42 个教程文档
+**统计**：48 个教程文档
 
 

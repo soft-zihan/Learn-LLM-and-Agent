@@ -1,6 +1,6 @@
 # Agent 测试与可观测性工程
 
-> 📅 **更新时间**: 2026-06-17  
+> 📅 **更新时间**: 2026-06-18  
 
 ---
 
@@ -12,7 +12,8 @@
 - [4. 安全测试](#4-安全测试)
 - [5. 监控仪表板](#5-监控仪表板)
 - [6. 告警规则](#6-告警规则)
-- [7. 参考资料](#7-参考资料)
+- [7. Agent 评估指标体系与基准测试](#7-agent-评估指标体系与基准测试)
+- [8. 参考资料](#8-参考资料)
 
 ---
 
@@ -1230,9 +1231,657 @@ groups:
 
 ---
 
-> 📅 **最后更新**: 2025-06
-> 📊 **难度等级**: Level 4-5（高级-专家）
-> 🔗 **相关文档**: 
-> - [Agent 工程化框架](../04-Agent工程化框架/README.md)
-> - [多 Agent 系统](../01-多Agent系统/README.md)
-> - [测试验证指南](./README.md)
+## 7. Agent 评估指标体系与基准测试
+
+> 📌 **说明**: 本章节来自原"工作流编排与LangGraph"文档的评估与测试部分，已整合至本文件。
+## 1. 评估与测试
+
+### 1.1 Agent 能力评估
+
+#### 评估指标体系
+
+```python
+# Agent 评估指标体系
+
+from typing import List, Dict
+from dataclasses import dataclass
+from datetime import datetime
+
+@dataclass
+class AgentMetrics:
+    """Agent 评估指标"""
+    # 工具使用
+    tool_accuracy: float = 0.0  # 工具使用准确率
+    tool_selection_precision: float = 0.0  # 工具选择精确率
+    tool_call_efficiency: float = 0.0  # 工具调用效率
+    
+    # 任务完成
+    task_completion_rate: float = 0.0  # 任务完成率
+    average_iterations: float = 0.0  # 平均迭代次数
+    average_execution_time: float = 0.0  # 平均执行时间
+    
+    # 输出质量
+    output_accuracy: float = 0.0  # 输出准确率
+    output_completeness: float = 0.0  # 输出完整性
+    output_relevance: float = 0.0  # 输出相关性
+    
+    # 错误处理
+    error_rate: float = 0.0  # 错误率
+    recovery_success_rate: float = 0.0  # 错误恢复成功率
+    
+    # 资源使用
+    average_tokens: float = 0.0  # 平均 token 消耗
+    cost_per_task: float = 0.0  # 单任务成本
+    
+    def to_dict(self) -> dict:
+        return {
+            "tool_accuracy": self.tool_accuracy,
+            "tool_selection_precision": self.tool_selection_precision,
+            "task_completion_rate": self.task_completion_rate,
+            "average_iterations": self.average_iterations,
+            "error_rate": self.error_rate,
+            "output_accuracy": self.output_accuracy
+        }
+
+class AgentEvaluator:
+    """Agent 评估器"""
+    
+    def __init__(self, llm):
+        self.llm = llm
+        self.evaluation_history: List[dict] = []
+    
+    def evaluate_single_task(
+        self,
+        task: str,
+        expected_output: str,
+        actual_output: str,
+        execution_info: dict
+    ) -> dict:
+        """评估单个任务"""
+        prompt = f"""
+请评估 Agent 的任务执行质量：
+
+任务：{task}
+期望输出：{expected_output}
+实际输出：{actual_output}
+执行信息：{execution_info}
+
+评估维度（0-1 分）：
+1. **准确性**：输出是否准确无误
+2. **完整性**：是否覆盖所有要求
+3. **相关性**：输出是否与任务相关
+4. **效率**：执行效率如何
+
+输出 JSON：
+```json
+{{
+    "accuracy": 0.9,
+    "completeness": 0.8,
+    "relevance": 0.95,
+    "efficiency": 0.7,
+    "overall_score": 0.84,
+    "feedback": "具体反馈"
+}}
+```
+"""
+        
+        response = self.llm.invoke([HumanMessage(content=prompt)])
+        
+        try:
+            json_str = response.content.split("```json")[1].split("```")[0]
+            evaluation = json.loads(json_str.strip())
+            
+            # 记录
+            self.evaluation_history.append({
+                "task": task,
+                "evaluation": evaluation,
+                "timestamp": datetime.now().isoformat()
+            })
+            
+            return evaluation
+        except:
+            return {"overall_score": 0, "feedback": "评估失败"}
+    
+    def aggregate_metrics(self) -> AgentMetrics:
+        """聚合指标"""
+        if not self.evaluation_history:
+            return AgentMetrics()
+        
+        # 计算平均值
+        scores = {
+            "tool_accuracy": [],
+            "task_completion_rate": [],
+            "output_accuracy": [],
+            "error_rate": []
+        }
+        
+        for record in self.evaluation_history:
+            eval_data = record["evaluation"]
+            scores["task_completion_rate"].append(eval_data.get("overall_score", 0))
+            scores["output_accuracy"].append(eval_data.get("accuracy", 0))
+        
+        metrics = AgentMetrics()
+        metrics.task_completion_rate = sum(scores["task_completion_rate"]) / len(scores["task_completion_rate"])
+        metrics.output_accuracy = sum(scores["output_accuracy"]) / len(scores["output_accuracy"])
+        
+        return metrics
+
+# 使用示例
+evaluator = AgentEvaluator(llm)
+
+# 评估任务
+evaluation = evaluator.evaluate_single_task(
+    task="计算 2^10",
+    expected_output="1024",
+    actual_output="1024",
+    execution_info={
+        "iterations": 2,
+        "tool_calls": 1,
+        "execution_time": 3.5
+    }
+)
+
+print(f"总体评分：{evaluation['overall_score']}")
+print(f"反馈：{evaluation['feedback']}")
+```
+
+#### 基准测试套件
+
+```python
+# 基准测试套件
+
+from typing import List, Callable
+import json
+
+class BenchmarkTask:
+    """基准测试任务"""
+    def __init__(
+        self,
+        name: str,
+        description: str,
+        input_data: dict,
+        expected_output: str,
+        category: str,
+        difficulty: int = 1
+    ):
+        self.name = name
+        self.description = description
+        self.input_data = input_data
+        self.expected_output = expected_output
+        self.category = category
+        self.difficulty = difficulty
+
+class BenchmarkSuite:
+    """基准测试套件"""
+    
+    def __init__(self):
+        self.tasks: List[BenchmarkTask] = []
+        self.results: List[dict] = []
+    
+    def add_task(self, task: BenchmarkTask):
+        """添加测试任务"""
+        self.tasks.append(task)
+    
+    def load_standard_benchmarks(self):
+        """加载标准基准测试"""
+        # 工具使用测试
+        self.add_task(BenchmarkTask(
+            name="calculator_basic",
+            description="基础计算",
+            input_data={"input": "计算 256 * 128"},
+            expected_output="32768",
+            category="tool_use",
+            difficulty=1
+        ))
+        
+        self.add_task(BenchmarkTask(
+            name="search_fact",
+            description="事实查询",
+            input_data={"input": "爱因斯坦哪一年获得诺贝尔奖？"},
+            expected_output="1921 年",
+            category="tool_use",
+            difficulty=2
+        ))
+        
+        # 多步推理测试
+        self.add_task(BenchmarkTask(
+            name="multi_step_reasoning",
+            description="多步推理",
+            input_data={"input": "如果 3 个人 3 天完成 3 个项目，9 个人 9 天完成多少？"},
+            expected_output="27 个项目",
+            category="reasoning",
+            difficulty=3
+        ))
+        
+        # 错误处理测试
+        self.add_task(BenchmarkTask(
+            name="error_handling",
+            description="错误处理",
+            input_data={"input": "查询一个不存在的城市天气"},
+            expected_output="友好的错误提示",
+            category="error_handling",
+            difficulty=2
+        ))
+    
+    def run_benchmark(self, agent_executor) -> dict:
+        """运行基准测试"""
+        results = {
+            "total_tasks": len(self.tasks),
+            "passed": 0,
+            "failed": 0,
+            "by_category": {},
+            "by_difficulty": {},
+            "details": []
+        }
+        
+        for task in self.tasks:
+            # 执行任务
+            try:
+                result = agent_executor.invoke({"input": task.input_data["input"]})
+                actual_output = result.get("output", "")
+                
+                # 评估
+                passed = self._evaluate_output(
+                    task.expected_output,
+                    actual_output
+                )
+                
+                if passed:
+                    results["passed"] += 1
+                else:
+                    results["failed"] += 1
+                
+                # 按分类统计
+                if task.category not in results["by_category"]:
+                    results["by_category"][task.category] = {"passed": 0, "total": 0}
+                results["by_category"][task.category]["total"] += 1
+                if passed:
+                    results["by_category"][task.category]["passed"] += 1
+                
+                # 按难度统计
+                if task.difficulty not in results["by_difficulty"]:
+                    results["by_difficulty"][task.difficulty] = {"passed": 0, "total": 0}
+                results["by_difficulty"][task.difficulty]["total"] += 1
+                if passed:
+                    results["by_difficulty"][task.difficulty]["passed"] += 1
+                
+                # 详细结果
+                results["details"].append({
+                    "task": task.name,
+                    "category": task.category,
+                    "difficulty": task.difficulty,
+                    "passed": passed,
+                    "expected": task.expected_output,
+                    "actual": actual_output[:200]
+                })
+                
+            except Exception as e:
+                results["failed"] += 1
+                results["details"].append({
+                    "task": task.name,
+                    "category": task.category,
+                    "difficulty": task.difficulty,
+                    "passed": False,
+                    "error": str(e)
+                })
+        
+        return results
+    
+    def _evaluate_output(self, expected: str, actual: str) -> bool:
+        """评估输出（简化版）"""
+        # 简化：检查关键词
+        expected_keywords = set(expected.lower().split())
+        actual_lower = actual.lower()
+        
+        # 如果包含所有关键词，认为通过
+        return all(kw in actual_lower for kw in expected_keywords if len(kw) > 2)
+    
+    def generate_report(self, results: dict) -> str:
+        """生成测试报告"""
+        total = results["total_tasks"]
+        passed = results["passed"]
+        pass_rate = passed / total if total > 0 else 0
+        
+        report = f"""
+# 基准测试报告
+
+## 2. 总览
+- 总任务数：{total}
+- 通过：{passed}
+- 失败：{results['failed']}
+- 通过率：{pass_rate:.2%}
+
+## 3. 按分类
+"""
+        
+        for category, stats in results["by_category"].items():
+            cat_pass_rate = stats["passed"] / stats["total"]
+            report += f"- {category}: {stats['passed']}/{stats['total']} ({cat_pass_rate:.2%})\n"
+        
+        report += "\n## 按难度\n"
+        for difficulty, stats in sorted(results["by_difficulty"].items()):
+            diff_pass_rate = stats["passed"] / stats["total"]
+            report += f"- 难度 {difficulty}: {stats['passed']}/{stats['total']} ({diff_pass_rate:.2%})\n"
+        
+        return report
+
+# 使用示例
+suite = BenchmarkSuite()
+suite.load_standard_benchmarks()
+
+# 运行测试（需要 agent_executor）
+# results = suite.run_benchmark(agent_executor)
+# report = suite.generate_report(results)
+# print(report)
+```
+
+### 1.2 监控与调试
+
+#### 执行轨迹可视化
+
+```python
+# 执行轨迹记录与可视化
+
+from typing import List
+import json
+from datetime import datetime
+
+class ExecutionTracer:
+    """执行轨迹记录器"""
+    
+    def __init__(self):
+        self.traces: List[dict] = []
+        self.current_trace: List[dict] = []
+    
+    def start_trace(self, task: str):
+        """开始追踪"""
+        self.current_trace = [{
+            "event": "start",
+            "task": task,
+            "timestamp": datetime.now().isoformat()
+        }]
+    
+    def record_tool_call(self, tool_name: str, input_data: dict, output: str):
+        """记录工具调用"""
+        self.current_trace.append({
+            "event": "tool_call",
+            "tool": tool_name,
+            "input": input_data,
+            "output": output[:200],
+            "timestamp": datetime.now().isoformat()
+        })
+    
+    def record_llm_call(self, prompt_length: int, response: str, tokens: int):
+        """记录 LLM 调用"""
+        self.current_trace.append({
+            "event": "llm_call",
+            "prompt_length": prompt_length,
+            "response": response[:200],
+            "tokens": tokens,
+            "timestamp": datetime.now().isoformat()
+        })
+    
+    def record_error(self, error: str, recovery: str = None):
+        """记录错误"""
+        self.current_trace.append({
+            "event": "error",
+            "error": error,
+            "recovery": recovery,
+            "timestamp": datetime.now().isoformat()
+        })
+    
+    def end_trace(self, result: str):
+        """结束追踪"""
+        self.current_trace.append({
+            "event": "end",
+            "result": result,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+        # 保存
+        self.traces.append(self.current_trace.copy())
+        self.current_trace = []
+    
+    def visualize_trace(self, trace_index: int = -1) -> str:
+        """可视化轨迹"""
+        trace = self.traces[trace_index]
+        
+        visualization = "执行轨迹：\n"
+        visualization += "=" * 60 + "\n"
+        
+        for i, event in enumerate(trace):
+            timestamp = event["timestamp"].split("T")[1].split(".")[0]
+            
+            if event["event"] == "start":
+                visualization += f"[{timestamp}] 🚀 开始任务：{event['task']}\n"
+            elif event["event"] == "tool_call":
+                visualization += f"[{timestamp}] 🔧 调用工具：{event['tool']}\n"
+                visualization += f"   输入：{json.dumps(event['input'], ensure_ascii=False)[:100]}\n"
+            elif event["event"] == "llm_call":
+                visualization += f"[{timestamp}] 🧠 LLM 调用（{event['tokens']} tokens）\n"
+            elif event["event"] == "error":
+                visualization += f"[{timestamp}] ❌ 错误：{event['error']}\n"
+                if event.get("recovery"):
+                    visualization += f"   恢复：{event['recovery']}\n"
+            elif event["event"] == "end":
+                visualization += f"[{timestamp}] ✅ 完成：{event['result'][:100]}\n"
+            
+            visualization += "-" * 60 + "\n"
+        
+        return visualization
+    
+    def get_statistics(self) -> dict:
+        """获取统计信息"""
+        if not self.traces:
+            return {}
+        
+        total_traces = len(self.traces)
+        total_tool_calls = 0
+        total_llm_calls = 0
+        total_errors = 0
+        total_tokens = 0
+        
+        for trace in self.traces:
+            for event in trace:
+                if event["event"] == "tool_call":
+                    total_tool_calls += 1
+                elif event["event"] == "llm_call":
+                    total_llm_calls += 1
+                    total_tokens += event.get("tokens", 0)
+                elif event["event"] == "error":
+                    total_errors += 1
+        
+        return {
+            "total_traces": total_traces,
+            "total_tool_calls": total_tool_calls,
+            "total_llm_calls": total_llm_calls,
+            "total_errors": total_errors,
+            "total_tokens": total_tokens,
+            "avg_tool_calls_per_trace": total_tool_calls / total_traces,
+            "error_rate": total_errors / total_traces if total_traces > 0 else 0
+        }
+
+# 使用示例
+tracer = ExecutionTracer()
+
+# 模拟执行轨迹
+tracer.start_trace("查询天气并生成报告")
+tracer.record_llm_call(500, "Thought: 我需要查询天气", 100)
+tracer.record_tool_call("weather_api", {"city": "北京"}, "晴天，25°C")
+tracer.record_llm_call(300, "Final Answer: 北京天气...", 80)
+tracer.end_trace("报告生成成功")
+
+# 可视化
+print(tracer.visualize_trace())
+print(f"统计：{tracer.get_statistics()}")
+```
+
+#### 性能分析
+
+```python
+# Agent 性能分析工具
+
+import time
+from functools import wraps
+from collections import defaultdict
+
+class PerformanceProfiler:
+    """性能分析器"""
+    
+    def __init__(self):
+        self.profiles: dict = defaultdict(list)
+    
+    def profile(self, func_name: str):
+        """性能分析装饰器"""
+        def decorator(func):
+            @wraps(func)
+            def wrapper(*args, **kwargs):
+                start_time = time.time()
+                try:
+                    result = func(*args, **kwargs)
+                    elapsed = time.time() - start_time
+                    
+                    self.profiles[func_name].append({
+                        "duration": elapsed,
+                        "success": True,
+                        "timestamp": time.time()
+                    })
+                    
+                    return result
+                except Exception as e:
+                    elapsed = time.time() - start_time
+                    
+                    self.profiles[func_name].append({
+                        "duration": elapsed,
+                        "success": False,
+                        "error": str(e),
+                        "timestamp": time.time()
+                    })
+                    
+                    raise
+            return wrapper
+        return decorator
+    
+    def get_profile_stats(self, func_name: str) -> dict:
+        """获取函数性能统计"""
+        if func_name not in self.profiles:
+            return {}
+        
+        profiles = self.profiles[func_name]
+        durations = [p["duration"] for p in profiles]
+        
+        import numpy as np
+        return {
+            "call_count": len(profiles),
+            "success_count": sum(1 for p in profiles if p["success"]),
+            "failure_count": sum(1 for p in profiles if not p["success"]),
+            "avg_duration": float(np.mean(durations)),
+            "min_duration": float(np.min(durations)),
+            "max_duration": float(np.max(durations)),
+            "p50_duration": float(np.percentile(durations, 50)),
+            "p95_duration": float(np.percentile(durations, 95)),
+            "p99_duration": float(np.percentile(durations, 99))
+        }
+    
+    def get_all_stats(self) -> dict:
+        """获取所有函数性能统计"""
+        return {
+            func_name: self.get_profile_stats(func_name)
+            for func_name in self.profiles.keys()
+        }
+
+# 使用示例
+profiler = PerformanceProfiler()
+
+@profiler.profile("llm_call")
+def mock_llm_call():
+    """模拟 LLM 调用"""
+    import time
+    time.sleep(0.5)  # 模拟延迟
+    return "response"
+
+@profiler.profile("tool_execution")
+def mock_tool_execution():
+    """模拟工具执行"""
+    import time
+    time.sleep(0.2)
+    return "result"
+
+# 执行多次
+for _ in range(10):
+    mock_llm_call()
+    mock_tool_execution()
+
+# 查看统计
+llm_stats = profiler.get_profile_stats("llm_call")
+print(f"LLM 调用统计：")
+print(f"  调用次数：{llm_stats['call_count']}")
+print(f"  平均耗时：{llm_stats['avg_duration']:.3f}秒")
+print(f"  P95 耗时：{llm_stats['p95_duration']:.3f}秒")
+```
+
+### 1.3 日志记录
+
+```python
+# 完善的日志记录系统
+
+import logging
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
+
+def setup_agent_logger(
+    log_dir: str = "./logs",
+    log_level: int = logging.INFO,
+    max_bytes: int = 10 * 1024 * 1024,  # 10MB
+    backup_count: int = 5
+) -> logging.Logger:
+    """配置 Agent 日志"""
+    Path(log_dir).mkdir(parents=True, exist_ok=True)
+    
+    logger = logging.getLogger("agent")
+    logger.setLevel(log_level)
+    
+    # 控制台处理器
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(log_level)
+    console_formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    console_handler.setFormatter(console_formatter)
+    logger.addHandler(console_handler)
+    
+    # 文件处理器（自动轮转）
+    file_handler = RotatingFileHandler(
+        f"{log_dir}/agent.log",
+        maxBytes=max_bytes,
+        backupCount=backup_count
+    )
+    file_handler.setLevel(log_level)
+    file_formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
+    )
+    file_handler.setFormatter(file_formatter)
+    logger.addHandler(file_handler)
+    
+    # 错误日志（单独文件）
+    error_handler = RotatingFileHandler(
+        f"{log_dir}/agent_error.log",
+        maxBytes=max_bytes,
+        backupCount=backup_count
+    )
+    error_handler.setLevel(logging.ERROR)
+    error_handler.setFormatter(file_formatter)
+    logger.addHandler(error_handler)
+    
+    return logger
+
+# 使用示例
+logger = setup_agent_logger()
+
+logger.info("Agent 启动")
+logger.debug(f"配置：max_iterations=10")
+logger.warning("工具调用失败，准备重试")
+logger.error("数据库连接失败", exc_info=True)
+```
+
+---

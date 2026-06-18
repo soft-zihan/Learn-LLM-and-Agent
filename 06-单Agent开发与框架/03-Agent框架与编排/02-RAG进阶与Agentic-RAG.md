@@ -1751,3 +1751,335 @@ RAG 最佳实践清单
 - RAGAS: https://github.com/explodinggradients/ragas
 - LangChain: https://python.langchain.com/
 - LlamaIndex: https://www.llamaindex.ai/
+
+## Self-RAG 与 CRAG 实战
+
+> 📌 **说明**: Self-RAG 和 Corrective RAG (CRAG) 是 Agentic RAG 的进阶模式，通过 Agent 的自我评估和校正，显著提升检索质量。
+
+### Self-RAG：自反思检索增强生成
+
+Self-RAG 的核心思想是让模型在生成过程中**自我评估**是否需要检索、检索结果是否相关、生成结果是否准确。
+
+#### Self-RAG 架构图
+
+```mermaid
+graph TD
+    A[用户查询] --> B{是否需要检索?}
+    B -->|是| C[检索文档]
+    B -->|否| D[直接生成]
+    C --> E{检索结果相关?}
+    E -->|是| F[生成响应]
+    E -->|否| G[重新检索/跳过]
+    F --> H{生成结果准确?}
+    H -->|是| I[返回结果]
+    H -->|否| J[重新生成]
+    G --> C
+    J --> F
+```
+
+#### LangGraph Self-RAG 实现
+
+```python
+# 🚀 生产级可执行代码
+from typing import TypedDict, Literal, List, Annotated
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
+from langgraph.graph import StateGraph, END
+
+# 定义状态
+class SelfRAGState(TypedDict):
+    query: str
+    documents: List[str]
+    generation: str
+    retrieval_needed: Literal["yes", "no"]
+    relevance: Literal["relevant", "irrelevant"]
+    support: Literal["fully", "partially", "no"]
+
+llm = ChatOpenAI(model="gpt-4", temperature=0)
+
+# 节点1：判断是否需要检索
+def retrieve_decision(state: SelfRAGState) -> SelfRAGState:
+    """决定是否需要检索"""
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", "判断用户查询是否需要检索外部知识。输出 yes 或 no。"),
+        ("human", "查询：{query}")
+    ])
+    
+    chain = prompt | llm
+    response = chain.invoke({"query": state["query"]})
+    
+    return {
+        **state,
+        "retrieval_needed": "yes" if "yes" in response.content.lower() else "no"
+    }
+
+# 节点2：检索
+def retrieve(state: SelfRAGState) -> SelfRAGState:
+    """执行检索"""
+    # 实际实现应连接向量数据库
+    # 这里使用模拟检索
+    mock_docs = [
+        f"文档1：关于 {state['query']} 的信息...",
+        f"文档2：更多关于 {state['query']} 的细节..."
+    ]
+    return {**state, "documents": mock_docs}
+
+# 节点3：评估相关性
+def relevance_evaluation(state: SelfRAGState) -> SelfRAGState:
+    """评估检索结果是否相关"""
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", "评估检索结果是否与查询相关。输出 relevant 或 irrelevant。"),
+        ("human", "查询：{query}\n\n文档：{documents}")
+    ])
+    
+    chain = prompt | llm
+    response = chain.invoke({
+        "query": state["query"],
+        "documents": "\n".join(state["documents"])
+    })
+    
+    return {
+        **state,
+        "relevance": "relevant" if "relevant" in response.content.lower() else "irrelevant"
+    }
+
+# 节点4：生成
+def generate(state: SelfRAGState) -> SelfRAGState:
+    """生成响应"""
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", "基于以下文档回答问题。如果文档不足，说明无法回答。"),
+        ("human", "问题：{query}\n\n文档：{documents}")
+    ])
+    
+    chain = prompt | llm
+    response = chain.invoke({
+        "query": state["query"],
+        "documents": "\n".join(state["documents"])
+    })
+    
+    return {**state, "generation": response.content}
+
+# 条件边函数
+def should_retrieve(state: SelfRAGState) -> str:
+    return "retrieve" if state["retrieval_needed"] == "yes" else "generate"
+
+def is_relevant(state: SelfRAGState) -> str:
+    return "generate" if state["relevance"] == "relevant" else "retrieve"
+
+# 构建图
+builder = StateGraph(SelfRAGState)
+
+# 添加节点
+builder.add_node("retrieve_decision", retrieve_decision)
+builder.add_node("retrieve", retrieve)
+builder.add_node("relevance_eval", relevance_evaluation)
+builder.add_node("generate", generate)
+
+# 添加边
+builder.add_edge("__start__", "retrieve_decision")
+builder.add_conditional_edges(
+    "retrieve_decision",
+    should_retrieve,
+    {"retrieve": "retrieve", "generate": "generate"}
+)
+builder.add_edge("retrieve", "relevance_eval")
+builder.add_conditional_edges(
+    "relevance_eval",
+    is_relevant,
+    {"generate": "generate", "retrieve": "retrieve"}
+)
+builder.add_edge("generate", END)
+
+# 编译
+self_rag = builder.compile()
+
+# 使用示例
+result = self_rag.invoke({"query": "什么是 Transformer 架构？"})
+print(f"生成结果：{result['generation']}")
+```
+
+### CRAG：校正性检索增强生成
+
+CRAG (Corrective RAG) 的核心思想是在检索后增加**知识精炼**步骤，过滤不相关信息，并通过网络搜索补充知识。
+
+#### CRAG 架构图
+
+```mermaid
+graph TD
+    A[用户查询] --> B[检索文档]
+    B --> C{知识精炼}
+    C -->|相关| D[保留知识]
+    C -->|部分相关| E[精炼后保留]
+    C -->|不相关| F[丢弃]
+    D --> G[网络搜索补充]
+    E --> G
+    F --> G
+    G --> H[生成响应]
+```
+
+#### LangGraph CRAG 实现
+
+```python
+# 🚀 生产级可执行代码
+from typing import TypedDict, List, Literal
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
+from langgraph.graph import StateGraph, END
+
+class CRAGState(TypedDict):
+    query: str
+    retrieved_docs: List[str]
+    refined_docs: List[str]
+    web_results: List[str]
+    knowledge_score: Literal["correct", "incorrect", "ambiguous"]
+    final_answer: str
+
+llm = ChatOpenAI(model="gpt-4", temperature=0)
+
+# 节点1：检索
+def retrieve_docs(state: CRAGState) -> CRAGState:
+    """检索文档"""
+    # 实际应连接向量数据库
+    mock_docs = [
+        f"相关文档：关于 {state['query']} 的正确信息",
+        "不相关文档：完全无关的内容",
+        f"部分相关：部分关于 {state['query']} 的信息"
+    ]
+    return {**state, "retrieved_docs": mock_docs}
+
+# 节点2：知识精炼
+def refine_knowledge(state: CRAGState) -> CRAGState:
+    """精炼检索结果"""
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", """评估每个文档与查询的相关性。
+输出 JSON 数组，每个元素包含：
+- content: 文档内容
+- score: relevant/irrelevant/partial"""),
+        ("human", "查询：{query}\n\n文档列表：{docs}")
+    ])
+    
+    chain = prompt | llm
+    response = chain.invoke({
+        "query": state["query"],
+        "docs": "\n".join(state["retrieved_docs"])
+    })
+    
+    # 解析结果，保留相关和部分相关
+    refined = []
+    # 实际应解析 JSON，这里简化
+    for doc in state["retrieved_docs"]:
+        if "不相关" not in doc:
+            refined.append(doc)
+    
+    return {**state, "refined_docs": refined}
+
+# 节点3：网络搜索补充
+def web_search(state: CRAGState) -> CRAGState:
+    """网络搜索补充知识"""
+    # 实际应调用搜索 API（如 Tavily、Serper）
+    mock_results = [
+        f"网络搜索结果1：关于 {state['query']} 的最新信息",
+        f"网络搜索结果2：更多补充资料"
+    ]
+    return {**state, "web_results": mock_results}
+
+# 节点4：评估知识质量
+def evaluate_knowledge(state: CRAGState) -> CRAGState:
+    """评估知识质量"""
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", "评估以下知识是否足以回答问题。输出 correct/incorrect/ambiguous。"),
+        ("human", "问题：{query}\n\n精炼后的知识：{refined}\n\n网络搜索：{web}")
+    ])
+    
+    chain = prompt | llm
+    response = chain.invoke({
+        "query": state["query"],
+        "refined": "\n".join(state["refined_docs"]),
+        "web": "\n".join(state["web_results"])
+    })
+    
+    score = response.content.lower().strip()
+    if "correct" in score:
+        knowledge_score = "correct"
+    elif "incorrect" in score:
+        knowledge_score = "incorrect"
+    else:
+        knowledge_score = "ambiguous"
+    
+    return {**state, "knowledge_score": knowledge_score}
+
+# 节点5：生成
+def generate_answer(state: CRAGState) -> CRAGState:
+    """生成最终答案"""
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", "基于提供的知识回答问题。如果知识不足，说明无法确定。"),
+        ("human", "问题：{query}\n\n知识：{knowledge}")
+    ])
+    
+    knowledge = state["refined_docs"] + state["web_results"]
+    chain = prompt | llm
+    response = chain.invoke({
+        "query": state["query"],
+        "knowledge": "\n".join(knowledge)
+    })
+    
+    return {**state, "final_answer": response.content}
+
+# 条件边函数
+def knowledge_check(state: CRAGState) -> str:
+    if state["knowledge_score"] == "correct":
+        return "generate"
+    elif state["knowledge_score"] == "incorrect":
+        return "web_search"  # 知识不正确，重新搜索
+    else:
+        return "web_search"  # 知识模糊，补充搜索
+
+# 构建图
+builder = StateGraph(CRAGState)
+
+builder.add_node("retrieve", retrieve_docs)
+builder.add_node("refine", refine_knowledge)
+builder.add_node("web_search", web_search)
+builder.add_node("evaluate", evaluate_knowledge)
+builder.add_node("generate", generate_answer)
+
+builder.add_edge("__start__", "retrieve")
+builder.add_edge("retrieve", "refine")
+builder.add_edge("refine", "evaluate")
+builder.add_conditional_edges(
+    "evaluate",
+    knowledge_check,
+    {"generate": "generate", "web_search": "web_search"}
+)
+builder.add_edge("web_search", "generate")
+builder.add_edge("generate", END)
+
+crag = builder.compile()
+
+# 使用示例
+result = crag.invoke({"query": "2026年最新的 AI 技术趋势是什么？"})
+print(f"最终答案：{result['final_answer']}")
+```
+
+#### Self-RAG vs CRAG 对比
+
+| 特性 | Self-RAG | CRAG |
+|------|---------|------|
+| **核心机制** | 自我评估检索必要性 | 知识精炼 + 网络补充 |
+| **检索决策** | 模型判断是否需要检索 | 始终检索，但精炼过滤 |
+| **知识补充** | 重新检索相同源 | 网络搜索补充 |
+| **适用场景** | 检索成本高、需按需检索 | 知识可能过时、需多源验证 |
+| **Token 消耗** | 较低（按需） | 中等（始终检索+精炼） |
+| **准确率** | 高 | 最高（多源验证） |
+
+#### 实战建议
+
+1. **首选 Self-RAG**：当检索成本高（如大型知识库）或查询可能不需要检索时
+2. **选择 CRAG**：当知识可能过时、需要最新信息、或检索结果质量不稳定时
+3. **混合使用**：先用 Self-RAG 判断是否需要检索，再用 CRAG 精炼和补充
+
+#### 参考资料
+
+1. Self-RAG 论文：https://arxiv.org/abs/2310.11511
+2. CRAG 论文：https://arxiv.org/abs/2401.15884
+3. LangGraph 官方示例：https://langchain-ai.github.io/langgraph/

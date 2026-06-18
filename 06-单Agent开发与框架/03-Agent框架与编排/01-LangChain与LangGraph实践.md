@@ -1,6 +1,6 @@
 # LangChain 与 LangGraph 最新实践(2026 v1.0 稳定版)
 
-> 📅 **更新时间**: 2026-06-17  
+> 📅 **更新时间**: 2026-06-18  
 
 ---
 
@@ -9,9 +9,11 @@
 - [1. LangChain v1.0 核心变化与概念](#1-langchain-v10-核心变化与概念)
 - [2. LangGraph v1.0 状态图与工作流编排](#2-langgraph-v10-状态图与工作流编排)
 - [3. 多 Agent 协作模式](#3-多-agent-协作模式)
-- [4. 最新特性与最佳实践(2025-2026)](#4-最新特性与最佳实践2025-2026)
-- [5. 实战案例:智能代码审查 Agent](#5-实战案例智能代码审查-agent)
-- [6. 参考资源](#6-参考资源)
+- [4. 工作流编排模式](#4-工作流编排模式)
+- [5. 实战项目](#5-实战项目)
+- [6. 实战案例:智能代码审查 Agent](#6-实战案例智能代码审查-agent)
+- [7. 最新特性与最佳实践(2025-2026)](#7-最新特性与最佳实践2025-2026)
+- [8. 参考资源](#8-参考资源)
 
 ---
 
@@ -1662,3 +1664,763 @@ review_graph.add_edge("human_review", END)
 - 需要定制时添加中间件
 - 复杂工作流时使用 LangGraph 图结构
 - 两者可以混合使用（create_agent 可以作为 LangGraph 的节点）
+
+---
+
+## 4. 工作流编排模式
+
+> 📌 **说明**: 本章节来自原"工作流编排与LangGraph"文档的工作流模式部分，已整合至本文件。
+## 2. 总览
+- 总任务数：{total}
+- 通过：{passed}
+- 失败：{results['failed']}
+- 通过率：{pass_rate:.2%}
+
+## 3. 按分类
+"""
+        
+        for category, stats in results["by_category"].items():
+            cat_pass_rate = stats["passed"] / stats["total"]
+            report += f"- {category}: {stats['passed']}/{stats['total']} ({cat_pass_rate:.2%})\n"
+        
+        report += "\n## 按难度\n"
+        for difficulty, stats in sorted(results["by_difficulty"].items()):
+            diff_pass_rate = stats["passed"] / stats["total"]
+            report += f"- 难度 {difficulty}: {stats['passed']}/{stats['total']} ({diff_pass_rate:.2%})\n"
+        
+        return report
+
+# 使用示例
+suite = BenchmarkSuite()
+suite.load_standard_benchmarks()
+
+# 运行测试（需要 agent_executor）
+# results = suite.run_benchmark(agent_executor)
+# report = suite.generate_report(results)
+# print(report)
+```
+
+### 1.2 监控与调试
+
+#### 执行轨迹可视化
+
+```python
+# 执行轨迹记录与可视化
+
+from typing import List
+import json
+from datetime import datetime
+
+class ExecutionTracer:
+    """执行轨迹记录器"""
+    
+    def __init__(self):
+        self.traces: List[dict] = []
+        self.current_trace: List[dict] = []
+    
+    def start_trace(self, task: str):
+        """开始追踪"""
+        self.current_trace = [{
+            "event": "start",
+            "task": task,
+            "timestamp": datetime.now().isoformat()
+        }]
+    
+    def record_tool_call(self, tool_name: str, input_data: dict, output: str):
+        """记录工具调用"""
+        self.current_trace.append({
+            "event": "tool_call",
+            "tool": tool_name,
+            "input": input_data,
+            "output": output[:200],
+            "timestamp": datetime.now().isoformat()
+        })
+    
+    def record_llm_call(self, prompt_length: int, response: str, tokens: int):
+        """记录 LLM 调用"""
+        self.current_trace.append({
+            "event": "llm_call",
+            "prompt_length": prompt_length,
+            "response": response[:200],
+            "tokens": tokens,
+            "timestamp": datetime.now().isoformat()
+        })
+    
+    def record_error(self, error: str, recovery: str = None):
+        """记录错误"""
+        self.current_trace.append({
+            "event": "error",
+            "error": error,
+            "recovery": recovery,
+            "timestamp": datetime.now().isoformat()
+        })
+    
+    def end_trace(self, result: str):
+        """结束追踪"""
+        self.current_trace.append({
+            "event": "end",
+            "result": result,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+        # 保存
+        self.traces.append(self.current_trace.copy())
+        self.current_trace = []
+    
+    def visualize_trace(self, trace_index: int = -1) -> str:
+        """可视化轨迹"""
+        trace = self.traces[trace_index]
+        
+        visualization = "执行轨迹：\n"
+        visualization += "=" * 60 + "\n"
+        
+        for i, event in enumerate(trace):
+            timestamp = event["timestamp"].split("T")[1].split(".")[0]
+            
+            if event["event"] == "start":
+                visualization += f"[{timestamp}] 🚀 开始任务：{event['task']}\n"
+            elif event["event"] == "tool_call":
+                visualization += f"[{timestamp}] 🔧 调用工具：{event['tool']}\n"
+                visualization += f"   输入：{json.dumps(event['input'], ensure_ascii=False)[:100]}\n"
+            elif event["event"] == "llm_call":
+                visualization += f"[{timestamp}] 🧠 LLM 调用（{event['tokens']} tokens）\n"
+            elif event["event"] == "error":
+                visualization += f"[{timestamp}] ❌ 错误：{event['error']}\n"
+                if event.get("recovery"):
+                    visualization += f"   恢复：{event['recovery']}\n"
+            elif event["event"] == "end":
+                visualization += f"[{timestamp}] ✅ 完成：{event['result'][:100]}\n"
+            
+            visualization += "-" * 60 + "\n"
+        
+        return visualization
+    
+    def get_statistics(self) -> dict:
+        """获取统计信息"""
+        if not self.traces:
+            return {}
+        
+        total_traces = len(self.traces)
+        total_tool_calls = 0
+        total_llm_calls = 0
+        total_errors = 0
+        total_tokens = 0
+        
+        for trace in self.traces:
+            for event in trace:
+                if event["event"] == "tool_call":
+                    total_tool_calls += 1
+                elif event["event"] == "llm_call":
+                    total_llm_calls += 1
+                    total_tokens += event.get("tokens", 0)
+                elif event["event"] == "error":
+                    total_errors += 1
+        
+        return {
+            "total_traces": total_traces,
+            "total_tool_calls": total_tool_calls,
+            "total_llm_calls": total_llm_calls,
+            "total_errors": total_errors,
+            "total_tokens": total_tokens,
+            "avg_tool_calls_per_trace": total_tool_calls / total_traces,
+            "error_rate": total_errors / total_traces if total_traces > 0 else 0
+        }
+
+# 使用示例
+tracer = ExecutionTracer()
+
+# 模拟执行轨迹
+tracer.start_trace("查询天气并生成报告")
+tracer.record_llm_call(500, "Thought: 我需要查询天气", 100)
+tracer.record_tool_call("weather_api", {"city": "北京"}, "晴天，25°C")
+tracer.record_llm_call(300, "Final Answer: 北京天气...", 80)
+tracer.end_trace("报告生成成功")
+
+# 可视化
+print(tracer.visualize_trace())
+print(f"统计：{tracer.get_statistics()}")
+```
+
+#### 性能分析
+
+```python
+# Agent 性能分析工具
+
+import time
+from functools import wraps
+from collections import defaultdict
+
+class PerformanceProfiler:
+    """性能分析器"""
+    
+    def __init__(self):
+        self.profiles: dict = defaultdict(list)
+    
+    def profile(self, func_name: str):
+        """性能分析装饰器"""
+        def decorator(func):
+            @wraps(func)
+            def wrapper(*args, **kwargs):
+                start_time = time.time()
+                try:
+                    result = func(*args, **kwargs)
+                    elapsed = time.time() - start_time
+                    
+                    self.profiles[func_name].append({
+                        "duration": elapsed,
+                        "success": True,
+                        "timestamp": time.time()
+                    })
+                    
+                    return result
+                except Exception as e:
+                    elapsed = time.time() - start_time
+                    
+                    self.profiles[func_name].append({
+                        "duration": elapsed,
+                        "success": False,
+                        "error": str(e),
+                        "timestamp": time.time()
+                    })
+                    
+                    raise
+            return wrapper
+        return decorator
+    
+    def get_profile_stats(self, func_name: str) -> dict:
+        """获取函数性能统计"""
+        if func_name not in self.profiles:
+            return {}
+        
+        profiles = self.profiles[func_name]
+        durations = [p["duration"] for p in profiles]
+        
+        import numpy as np
+        return {
+            "call_count": len(profiles),
+            "success_count": sum(1 for p in profiles if p["success"]),
+            "failure_count": sum(1 for p in profiles if not p["success"]),
+            "avg_duration": float(np.mean(durations)),
+            "min_duration": float(np.min(durations)),
+            "max_duration": float(np.max(durations)),
+            "p50_duration": float(np.percentile(durations, 50)),
+            "p95_duration": float(np.percentile(durations, 95)),
+            "p99_duration": float(np.percentile(durations, 99))
+        }
+    
+    def get_all_stats(self) -> dict:
+        """获取所有函数性能统计"""
+        return {
+            func_name: self.get_profile_stats(func_name)
+            for func_name in self.profiles.keys()
+        }
+
+# 使用示例
+profiler = PerformanceProfiler()
+
+@profiler.profile("llm_call")
+def mock_llm_call():
+    """模拟 LLM 调用"""
+    import time
+    time.sleep(0.5)  # 模拟延迟
+    return "response"
+
+@profiler.profile("tool_execution")
+def mock_tool_execution():
+    """模拟工具执行"""
+    import time
+    time.sleep(0.2)
+    return "result"
+
+# 执行多次
+for _ in range(10):
+    mock_llm_call()
+    mock_tool_execution()
+
+# 查看统计
+llm_stats = profiler.get_profile_stats("llm_call")
+print(f"LLM 调用统计：")
+print(f"  调用次数：{llm_stats['call_count']}")
+print(f"  平均耗时：{llm_stats['avg_duration']:.3f}秒")
+print(f"  P95 耗时：{llm_stats['p95_duration']:.3f}秒")
+```
+
+### 1.3 日志记录
+
+```python
+# 完善的日志记录系统
+
+import logging
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
+
+def setup_agent_logger(
+    log_dir: str = "./logs",
+    log_level: int = logging.INFO,
+    max_bytes: int = 10 * 1024 * 1024,  # 10MB
+    backup_count: int = 5
+) -> logging.Logger:
+    """配置 Agent 日志"""
+    Path(log_dir).mkdir(parents=True, exist_ok=True)
+    
+    logger = logging.getLogger("agent")
+    logger.setLevel(log_level)
+    
+    # 控制台处理器
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(log_level)
+    console_formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    console_handler.setFormatter(console_formatter)
+    logger.addHandler(console_handler)
+    
+    # 文件处理器（自动轮转）
+    file_handler = RotatingFileHandler(
+        f"{log_dir}/agent.log",
+        maxBytes=max_bytes,
+        backupCount=backup_count
+    )
+    file_handler.setLevel(log_level)
+    file_formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
+    )
+    file_handler.setFormatter(file_formatter)
+    logger.addHandler(file_handler)
+    
+    # 错误日志（单独文件）
+    error_handler = RotatingFileHandler(
+        f"{log_dir}/agent_error.log",
+        maxBytes=max_bytes,
+        backupCount=backup_count
+    )
+    error_handler.setLevel(logging.ERROR)
+    error_handler.setFormatter(file_formatter)
+    logger.addHandler(error_handler)
+    
+    return logger
+
+# 使用示例
+logger = setup_agent_logger()
+
+logger.info("Agent 启动")
+logger.debug(f"配置：max_iterations=10")
+logger.warning("工具调用失败，准备重试")
+logger.error("数据库连接失败", exc_info=True)
+```
+
+---
+
+## 5. 实战项目
+
+> 📌 **说明**: 本章节来自原"工作流编排与LangGraph"文档的实战项目部分，已整合至本文件。
+
+## 5. 实战项目
+
+### 3.1 智能客服 Agent
+
+#### 完整实现
+
+```python
+# 智能客服 Agent 完整实现
+
+from langchain_openai import ChatOpenAI
+from langchain_core.tools import Tool, StructuredTool
+from langchain.agents import create_react_agent, AgentExecutor
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from pydantic import BaseModel, Field
+from typing import List, Optional
+import json
+
+llm = ChatOpenAI(model="gpt-5.2", temperature=0.3)
+
+# 1. 定义客服工具
+
+class FAQSearchInput(BaseModel):
+    """FAQ 搜索输入"""
+    query: str = Field(description="用户问题")
+    category: str = Field(description="问题类别", default="all")
+
+def search_faq(query: str, category: str = "all") -> str:
+    """搜索 FAQ 知识库"""
+    # 模拟 FAQ 数据库
+    faq_db = {
+        "退货": "退货政策：购买后 30 天内可以无理由退货",
+        "物流": "物流查询：请提供订单号，我们为您查询物流信息",
+        "支付": "支付方式：支持支付宝、微信、信用卡",
+        "发票": "发票申请：订单完成后可申请电子发票"
+    }
+    
+    # 简单匹配
+    for key, value in faq_db.items():
+        if key in query:
+            return value
+    
+    return "未找到相关信息，转人工客服"
+
+faq_tool = StructuredTool.from_function(
+    func=search_faq,
+    name="search_faq",
+    description="搜索常见问题解答",
+    args_schema=FAQSearchInput
+)
+
+class OrderQueryInput(BaseModel):
+    """订单查询输入"""
+    order_id: str = Field(description="订单号")
+
+def query_order(order_id: str) -> str:
+    """查询订单状态"""
+    # 模拟订单查询
+    orders = {
+        "ORD001": {"status": "已发货", "tracking": "SF123456"},
+        "ORD002": {"status": "处理中", "tracking": None}
+    }
+    
+    order = orders.get(order_id)
+    if order:
+        return json.dumps(order, ensure_ascii=False)
+    return "订单不存在"
+
+order_tool = StructuredTool.from_function(
+    func=query_order,
+    name="query_order",
+    description="查询订单状态",
+    args_schema=OrderQueryInput
+)
+
+def create_ticket(issue: str, user_id: str) -> str:
+    """创建工单"""
+    ticket_id = f"TKT{int(time.time())}"
+    return f"工单已创建：{ticket_id}，客服将在 24 小时内联系您"
+
+ticket_tool = Tool(
+    name="create_ticket",
+    func=lambda x: create_ticket(x, "user_001"),
+    description="创建客服工单"
+)
+
+# 2. 客服 Prompt
+
+customer_service_prompt = ChatPromptTemplate.from_messages([
+    ("system", """你是一个专业的电商客服助手。你的职责：
+
+1. **友好接待**：热情、礼貌地回答用户问题
+2. **问题解答**：使用工具查询并回答用户问题
+3. **订单管理**：帮助用户查询订单状态
+4. **工单创建**：无法解决的问题创建工单
+
+行为准则：
+- 始终保持友好和耐心
+- 不确定时使用工具查询
+- 无法解决时及时转人工
+- 不要编造信息
+
+可用工具：{tools}"""),
+    MessagesPlaceholder(variable_name="chat_history"),
+    ("human", "{input}"),
+    MessagesPlaceholder(variable_name="agent_scratchpad")
+])
+
+# 3. 创建 Agent
+
+tools = [faq_tool, order_tool, ticket_tool]
+
+agent = create_react_agent(
+    llm=llm,
+    tools=tools,
+    prompt=customer_service_prompt
+)
+
+customer_service_executor = AgentExecutor(
+    agent=agent,
+    tools=tools,
+    verbose=True,
+    handle_parsing_errors=True,
+    max_iterations=5
+)
+
+# 4. 对话管理
+
+class CustomerServiceSession:
+    """客服会话管理"""
+    
+    def __init__(self, executor: AgentExecutor):
+        self.executor = executor
+        self.chat_history = []
+    
+    def chat(self, user_input: str) -> str:
+        """对话"""
+        result = self.executor.invoke({
+            "input": user_input,
+            "chat_history": self.chat_history
+        })
+        
+        # 更新历史
+        self.chat_history.append(HumanMessage(content=user_input))
+        self.chat_history.append(AIMessage(content=result["output"]))
+        
+        # 保留最近 10 条
+        if len(self.chat_history) > 10:
+            self.chat_history = self.chat_history[-10:]
+        
+        return result["output"]
+
+# 5. 使用示例
+session = CustomerServiceSession(customer_service_executor)
+
+# 模拟对话
+print(session.chat("你好，我想咨询退货政策"))
+print(session.chat("我的订单 ORD001 状态如何？"))
+print(session.chat("我要投诉"))
+```
+
+### 3.2 数据分析 Agent
+
+```python
+# 数据分析 Agent
+
+import pandas as pd
+from langchain_core.tools import Tool
+from langchain.agents import create_react_agent, AgentExecutor
+import matplotlib.pyplot as plt
+
+# 1. 数据分析工具
+
+def query_database(sql: str) -> str:
+    """查询数据库"""
+    # 模拟数据库
+    data = {
+        "月份": ["1月", "2月", "3月", "4月", "5月", "6月"],
+        "销售额": [100, 120, 150, 180, 200, 250],
+        "订单数": [50, 60, 75, 90, 100, 125]
+    }
+    df = pd.DataFrame(data)
+    
+    # 简单 SQL 解析（简化版）
+    if "SUM" in sql or "总" in sql:
+        return f"总销售额：{df['销售额'].sum()}万元"
+    elif "AVG" in sql or "平均" in sql:
+        return f"平均月销售额：{df['销售额'].mean():.2f}万元"
+    elif "MAX" in sql or "最高" in sql:
+        max_month = df.loc[df["销售额"].idxmax()]
+        return f"最高销售月份：{max_month['月份']}，销售额：{max_month['销售额']}万元"
+    else:
+        return df.to_string(index=False)
+
+db_tool = Tool(
+    name="query_database",
+    func=query_database,
+    description="查询销售数据库，支持 SQL 语句"
+)
+
+def generate_chart(data_description: str) -> str:
+    """生成图表"""
+    # 模拟图表生成
+    data = {
+        "月份": ["1月", "2月", "3月", "4月", "5月", "6月"],
+        "销售额": [100, 120, 150, 180, 200, 250]
+    }
+    df = pd.DataFrame(data)
+    
+    plt.figure(figsize=(10, 6))
+    plt.bar(df["月份"], df["销售额"])
+    plt.title("月度销售额")
+    plt.xlabel("月份")
+    plt.ylabel("销售额（万元）")
+    
+    chart_path = "./chart.png"
+    plt.savefig(chart_path)
+    plt.close()
+    
+    return f"图表已生成：{chart_path}"
+
+chart_tool = Tool(
+    name="generate_chart",
+    func=generate_chart,
+    description="生成数据可视化图表"
+)
+
+def statistical_analysis(analysis_type: str) -> str:
+    """统计分析"""
+    data = [100, 120, 150, 180, 200, 250]
+    
+    import numpy as np
+    
+    if analysis_type == "描述性统计":
+        return f"""
+描述性统计结果：
+- 平均值：{np.mean(data):.2f}
+- 中位数：{np.median(data):.2f}
+- 标准差：{np.std(data):.2f}
+- 最小值：{np.min(data)}
+- 最大值：{np.max(data)}
+"""
+    elif analysis_type == "趋势分析":
+        # 简单线性回归
+        x = np.arange(len(data))
+        slope = np.polyfit(x, data, 1)[0]
+        return f"销售呈{'上升' if slope > 0 else '下降'}趋势，增长率：{slope:.2f}/月"
+    else:
+        return "未知分析类型"
+
+stats_tool = Tool(
+    name="statistical_analysis",
+    func=statistical_analysis,
+    description="执行统计分析"
+)
+
+# 2. 创建数据分析 Agent
+
+data_analyst_prompt = ChatPromptTemplate.from_messages([
+    ("system", """你是一个专业的数据分析师。你可以：
+
+1. 查询数据库获取数据
+2. 执行统计分析
+3. 生成可视化图表
+4. 撰写分析报告
+
+请根据用户需求，灵活运用工具进行数据分析。"""),
+    ("human", "{input}"),
+    MessagesPlaceholder(variable_name="agent_scratchpad")
+])
+
+tools = [db_tool, chart_tool, stats_tool]
+
+agent = create_react_agent(llm, tools, data_analyst_prompt)
+data_analyst_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+# 3. 使用示例
+# result = data_analyst_executor.invoke({
+#     "input": "分析 2024 年上半年销售趋势，生成图表"
+# })
+```
+
+### 3.3 代码助手 Agent
+
+```python
+# 代码助手 Agent
+
+from langchain_core.tools import Tool
+import subprocess
+import tempfile
+from pathlib import Path
+
+# 1. 代码工具
+
+def execute_python(code: str) -> str:
+    """执行 Python 代码"""
+    try:
+        # 创建临时文件
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+            f.write(code)
+            temp_path = f.name
+        
+        # 执行
+        result = subprocess.run(
+            ['python', temp_path],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        
+        # 清理
+        Path(temp_path).unlink()
+        
+        if result.returncode == 0:
+            return f"执行成功：\n{result.stdout}"
+        else:
+            return f"执行失败：\n{result.stderr}"
+    except Exception as e:
+        return f"错误：{str(e)}"
+
+code_executor = Tool(
+    name="execute_python",
+    func=execute_python,
+    description="执行 Python 代码并返回结果"
+)
+
+def lint_code(code: str) -> str:
+    """代码检查"""
+    try:
+        # 使用 py_compile 检查语法
+        import py_compile
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+            f.write(code)
+            temp_path = f.name
+        
+        py_compile.compile(temp_path, doraise=True)
+        Path(temp_path).unlink()
+        
+        return "代码语法正确"
+    except py_compile.PyCompileError as e:
+        return f"语法错误：\n{str(e)}"
+    except Exception as e:
+        return f"检查失败：{str(e)}"
+
+code_linter = Tool(
+    name="lint_code",
+    func=lint_code,
+    description="检查 Python 代码语法"
+)
+
+def search_documentation(query: str) -> str:
+    """搜索文档"""
+    # 模拟文档搜索
+    docs = {
+        "list": "Python list 是有序的可变序列，支持索引、切片等操作",
+        "dict": "Python dict 是键值对映射，支持快速查找",
+        "decorator": "装饰器是修改函数行为的设计模式"
+    }
+    
+    for key, value in docs.items():
+        if key in query.lower():
+            return value
+    
+    return "未找到相关文档"
+
+doc_search = Tool(
+    name="search_documentation",
+    func=search_documentation,
+    description="搜索 Python 文档"
+)
+
+# 2. 创建代码助手 Agent
+
+coding_assistant_prompt = ChatPromptTemplate.from_messages([
+    ("system", """你是一个专业的 Python 编程助手。你可以：
+
+1. **代码执行**：运行 Python 代码验证逻辑
+2. **代码检查**：检查代码语法和潜在问题
+3. **文档查询**：查询 Python 官方文档
+4. **Bug 修复**：帮助调试和修复代码
+5. **代码优化**：提供性能优化建议
+
+工作流程：
+1. 理解用户需求
+2. 编写或修改代码
+3. 使用工具验证
+4. 给出建议
+
+注意：
+- 代码要符合 PEP 8 规范
+- 添加必要的注释
+- 提供使用示例"""),
+    ("human", "{input}"),
+    MessagesPlaceholder(variable_name="agent_scratchpad")
+])
+
+tools = [code_executor, code_linter, doc_search]
+
+agent = create_react_agent(llm, tools, coding_assistant_prompt)
+coding_assistant_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+# 3. 使用示例
+# result = coding_assistant_executor.invoke({
+#     "input": "写一个函数计算列表中所有偶数的和"
+# })
+```
+
+---
+

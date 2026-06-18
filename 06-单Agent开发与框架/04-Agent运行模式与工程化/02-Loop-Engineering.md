@@ -1,6 +1,6 @@
-# Loop Engineering 进阶: 从 Harness 到自主循环
+# Loop Engineering: 从 Harness 到自主循环
 
-> 📅 **更新时间**: 2026-06-17  
+> 📅 **更新时间**: 2026-06-18  
 
 ---
 
@@ -13,7 +13,8 @@
 - [5. Loop 的风险与治理](#5-loop-的风险与治理)
 - [6. Token 成本优化实战](#6-token-成本优化实战)
 - [7. 最佳实践](#7-最佳实践)
-- [8. 参考链接](#8-参考链接)
+- [8. 总结: 构建 Loop,但保持你是工程师](#8-总结-构建-loop但保持你是工程师)
+- [9. 参考链接](#9-参考链接)
 
 ---
 
@@ -537,6 +538,26 @@ Level 5: 智能 Loop
 
 ### 7.3 未来展望
 
+---
+
+## 8. 总结：构建 Loop，但保持你是工程师
+
+### 8.1 核心原则
+
+✅ **DO**：
+- 带着判断力设计 Loop
+- 亲自审核 Loop 产出的代码
+- 分开制造者和验证者
+- 建立反馈机制和验证体系
+
+❌ **DON'T**：
+- 为了逃避思考而设计 Loop
+- 完全信任 Loop 的"完成"声明
+- 忽略理解债务的累积
+- 放弃工程师的判断力
+
+### 8.2 未来展望
+
 > 真正成熟的 Loop Engineering 系统可能要到 2027 年才会大规模出现，但基础架构的设计工作必须从现在开始。
 
 **关键趋势**：
@@ -545,12 +566,16 @@ Level 5: 智能 Loop
 3. 从工具使用者到系统设计者
 4. 验证体系成为核心竞争力
 
+> 构建 Loop。但像打算继续当工程师的人那样去构建，而不只是那个按下启动键的人。
+
 ---
 
-## 8. 参考链接
+## 9. 参考链接
 
 1. 知乎讨论：https://www.zhihu.com/question/2048003050531558553
 2. OpenClaw 文档：https://github.com/OpenClaw/openclaw
 3. Claude Code Loop：https://docs.claude.com/en/docs/claude-code/loops
 4. Anthropic Harness 实验：https://www.anthropic.com/engineering
 5. 虎嗅报道：大人，AI 编程又变天了
+6. CSDN 文章：Agent 工程范式四代演进
+7. 掘金文章：Loop Engineering 完整解析
