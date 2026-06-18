@@ -144,7 +144,6 @@ def recursive_character_splitting(documents):
             "\n",        # 换行
             "。",         # 句号（中文）
             ".",         # 句号（英文）
-            "！",         # 感叹号
             "！",        # 感叹号（中文）
             "?",         # 问号
             "？",        # 问号（中文）

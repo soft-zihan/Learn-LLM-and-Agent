@@ -16,6 +16,7 @@
 - [3. MCP Server 开发（Go）](#3-mcp-server-开发go)
 - [4. MCP Client 集成](#4-mcp-client-集成)
 - [5. MCP 2026-07-28 新特性速查](#5-mcp-2026-07-28-新特性速查)
+- [6. 更多实战场景](#6-更多实战场景)
 
 ---
 
@@ -2957,4 +2958,139 @@ async def search_database(query: str, context: RequestContext) -> dict:
 无状态服务器可轻松水平扩展，使用普通轮询负载均衡即可（无需 sticky sessions）。Nginx 配置只需在 proxy_pass 后加 `proxy_set_header MCP-Protocol-Version 2026-07-28`。
 
 ---
+
+## 6. 更多实战场景
+
+> 本节包含更多 MCP Server 实战项目示例，展示不同场景下的开发实践。
+
+### 6.1 数据库查询 MCP Server
+
+完整的数据库查询 MCP Server，支持 SQL 执行、结果格式化、权限控制。
+
+**核心功能**:
+- 只读 SQL 查询（SELECT）
+- SQL 安全验证（防止 DROP/DELETE 等危险操作）
+- 表结构查看
+- 表列表查询
+- 结果行数限制（MAX_ROWS = 1000）
+
+**关键代码片段**:
+
+```python
+from mcp.server.fastmcp import FastMCP
+from databases import Database
+import re
+
+mcp = FastMCP("database-server")
+database = Database("postgresql://user:password@localhost/mydb")
+
+ALLOWED_OPERATIONS = ["SELECT"]
+
+def validate_sql(sql: str) -> tuple[bool, str]:
+    """验证 SQL 语句"""
+    operation = sql.strip().split()[0].upper()
+    if operation not in ALLOWED_OPERATIONS:
+        return False, f"不允许的操作: {operation}"
+    
+    dangerous_keywords = ["DROP", "DELETE", "TRUNCATE", "ALTER", "INSERT", "UPDATE"]
+    for keyword in dangerous_keywords:
+        if re.search(r'\b' + keyword + r'\b', sql, re.IGNORECASE):
+            return False, f"SQL 包含危险关键字: {keyword}"
+    
+    return True, "OK"
+
+@mcp.tool()
+async def execute_query(sql: str, params: dict = None) -> str:
+    """执行只读 SQL 查询"""
+    valid, message = validate_sql(sql)
+    if not valid:
+        return f"SQL 验证失败: {message}"
+    
+    async with database:
+        results = await database.fetch_all(sql, values=params or {})
+    
+    return f"查询成功，返回 {len(results)} 行\n\n{results}"
+```
+
+### 6.2 文件管理 MCP Server
+
+文件管理 MCP Server，支持文件读写、目录操作、搜索。
+
+**核心功能**:
+- 安全路径解析（防止路径遍历攻击）
+- 文件读取/写入
+- 目录列表
+- 文件搜索（支持通配符）
+- 基于 BASE_DIR 的访问控制
+
+**关键代码片段**:
+
+```python
+from mcp.server.fastmcp import FastMCP
+from pathlib import Path
+
+mcp = FastMCP("file-manager")
+BASE_DIR = Path("/app/data")
+
+def safe_path(file_path: str) -> Path:
+    """安全的路径解析"""
+    path = Path(file_path).resolve()
+    if not path.startswith(BASE_DIR):
+        raise ValueError(f"路径超出允许范围: {BASE_DIR}")
+    return path
+
+@mcp.tool()
+async def read_file(file_path: str) -> str:
+    """读取文件内容"""
+    path = safe_path(file_path)
+    if not path.exists():
+        return f"文件不存在: {file_path}"
+    return path.read_text(encoding='utf-8')
+```
+
+### 6.3 API 集成 MCP Server
+
+API 集成 MCP Server，封装 REST API、GraphQL 支持、认证管理。
+
+**核心功能**:
+- REST API 调用（GET/POST）
+- GraphQL 查询
+- Bearer Token 认证
+- HTTP 客户端连接池
+- 优雅关闭（on_shutdown）
+
+**关键代码片段**:
+
+```python
+from mcp.server.fastmcp import FastMCP
+import httpx
+
+mcp = FastMCP("api-integration")
+
+client = httpx.AsyncClient(
+    base_url="https://api.example.com",
+    timeout=30.0,
+    headers={"Content-Type": "application/json"}
+)
+
+API_KEY = "your-api-key"
+
+@mcp.tool()
+async def get_users(page: int = 1, limit: int = 10) -> str:
+    """获取用户列表"""
+    response = await client.get(
+        "/users",
+        params={"page": page, "limit": limit},
+        headers={"Authorization": f"Bearer {API_KEY}"}
+    )
+    response.raise_for_status()
+    return str(response.json())
+
+@mcp.on_shutdown()
+async def cleanup():
+    """关闭 HTTP 客户端"""
+    await client.aclose()
+```
+
+> **完整代码**: 参考 `03-MCP安全权限与生产部署.md` 的第 1 节 "实战项目"（已迁移至此）
 

@@ -6,516 +6,14 @@
 
 ## 目录
 
-- [1. 实战项目](#1-实战项目)
-- [2. 生态工具](#2-生态工具)
-- [3. 前沿技术](#3-前沿技术)
-- [4. MCP 2026-07-28 安全与生产部署更新](#4-mcp-2026-07-28-安全与生产部署更新)
+- [1. 生态工具](#1-生态工具)
+- [2. 前沿技术](#2-前沿技术)
+- [3. MCP 2026-07-28 安全与生产部署更新](#3-mcp-2026-07-28-安全与生产部署更新)
+- [4. 参考资料](#4-参考资料)
 
 ---
 
-## 1. 实战项目
-
-### 1.1 数据库查询 MCP Server
-
-完整的数据库查询 MCP Server，支持 SQL 执行、结果格式化、权限控制。
-
-```python
-"""
-数据库查询 MCP Server
-"""
-from mcp.server.fastmcp import FastMCP
-from databases import Database
-from typing import Optional
-import json
-import re
-
-mcp = FastMCP("database-server")
-
-# 数据库连接
-database = Database("postgresql://user:password@localhost/mydb")
-
-# 安全配置
-ALLOWED_OPERATIONS = ["SELECT"]
-MAX_ROWS = 1000
-
-def validate_sql(sql: str) -> tuple[bool, str]:
-    """验证 SQL 语句"""
-    # 检查操作类型
-    operation = sql.strip().split()[0].upper()
-    if operation not in ALLOWED_OPERATIONS:
-        return False, f"不允许的操作: {operation}，仅允许: {ALLOWED_OPERATIONS}"
-    
-    # 检查危险关键字
-    dangerous_keywords = ["DROP", "DELETE", "TRUNCATE", "ALTER", "INSERT", "UPDATE"]
-    for keyword in dangerous_keywords:
-        if re.search(r'\b' + keyword + r'\b', sql, re.IGNORECASE):
-            return False, f"SQL 包含危险关键字: {keyword}"
-    
-    return True, "OK"
-
-@mcp.tool()
-async def execute_query(sql: str, params: Optional[dict] = None) -> str:
-    """
-    执行只读 SQL 查询
-    
-    Args:
-        sql: SQL 语句（仅支持 SELECT）
-        params: 查询参数
-    """
-    try:
-        # 验证 SQL
-        valid, message = validate_sql(sql)
-        if not valid:
-            return f"SQL 验证失败: {message}"
-        
-        # 执行查询
-        async with database:
-            if params:
-                results = await database.fetch_all(sql, values=params)
-            else:
-                results = await database.fetch_all(sql)
-        
-        # 限制行数
-        if len(results) > MAX_ROWS:
-            results = results[:MAX_ROWS]
-        
-        # 格式化结果
-        output = f"查询成功，返回 {len(results)} 行\n\n"
-        output += json.dumps(
-            [dict(row) for row in results],
-            indent=2,
-            default=str
-        )
-        
-        return output
-    
-    except Exception as e:
-        return f"查询失败: {e}"
-
-@mcp.tool()
-async def get_table_schema(table_name: str) -> str:
-    """
-    获取表结构
-    
-    Args:
-        table_name: 表名
-    """
-    try:
-        sql = """
-        SELECT column_name, data_type, is_nullable
-        FROM information_schema.columns
-        WHERE table_name = $1
-        ORDER BY ordinal_position
-        """
-        
-        async with database:
-            columns = await database.fetch_all(sql, values=[table_name])
-        
-        output = f"表 {table_name} 的结构:\n\n"
-        output += "| 列名 | 数据类型 | 可空 |\n"
-        output += "|------|----------|------|\n"
-        
-        for col in columns:
-            output += f"| {col['column_name']} | {col['data_type']} | {col['is_nullable']} |\n"
-        
-        return output
-    
-    except Exception as e:
-        return f"获取表结构失败: {e}"
-
-@mcp.tool()
-async def list_tables() -> str:
-    """列出所有表"""
-    try:
-        sql = """
-        SELECT table_name
-        FROM information_schema.tables
-        WHERE table_schema = 'public'
-        ORDER BY table_name
-        """
-        
-        async with database:
-            tables = await database.fetch_all(sql)
-        
-        output = "数据库中的表:\n\n"
-        for table in tables:
-            output += f"- {table['table_name']}\n"
-        
-        return output
-    
-    except Exception as e:
-        return f"获取表列表失败: {e}"
-
-@mcp.resource("db://schema/{table_name}")
-def get_table_schema_resource(table_name: str) -> str:
-    """表结构资源"""
-    # 同步版本，用于资源
-    return f"表 {table_name} 的结构信息"
-
-# 启动
-if __name__ == "__main__":
-    mcp.run()
-```
-
-### 1.2 文件管理 MCP Server
-
-文件管理 MCP Server，支持文件读写、目录操作、搜索。
-
-```python
-"""
-文件管理 MCP Server
-"""
-from mcp.server.fastmcp import FastMCP
-from pathlib import Path
-from typing import Optional
-import os
-import json
-
-mcp = FastMCP("file-manager")
-
-# 配置
-BASE_DIR = Path("/app/data")
-
-def safe_path(file_path: str) -> Path:
-    """安全的路径解析"""
-    path = Path(file_path).resolve()
-    
-    # 确保在允许的目录内
-    if not path.startswith(BASE_DIR):
-        raise ValueError(f"路径超出允许范围: {BASE_DIR}")
-    
-    return path
-
-@mcp.tool()
-async def read_file(file_path: str) -> str:
-    """
-    读取文件内容
-    
-    Args:
-        file_path: 文件路径（相对于 BASE_DIR）
-    """
-    try:
-        path = safe_path(file_path)
-        
-        if not path.exists():
-            return f"文件不存在: {file_path}"
-        
-        if not path.is_file():
-            return f"不是文件: {file_path}"
-        
-        # 读取文件
-        content = path.read_text(encoding='utf-8')
-        
-        return f"文件: {file_path}\n\n{content}"
-    
-    except ValueError as e:
-        return f"安全错误: {e}"
-    except Exception as e:
-        return f"读取失败: {e}"
-
-@mcp.tool()
-async def write_file(file_path: str, content: str, append: bool = False) -> str:
-    """
-    写入文件
-    
-    Args:
-        file_path: 文件路径
-        content: 内容
-        append: 是否追加
-    """
-    try:
-        path = safe_path(file_path)
-        
-        # 确保父目录存在
-        path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # 写入文件
-        mode = 'a' if append else 'w'
-        with open(path, mode, encoding='utf-8') as f:
-            f.write(content)
-        
-        return f"文件写入成功: {file_path}"
-    
-    except ValueError as e:
-        return f"安全错误: {e}"
-    except Exception as e:
-        return f"写入失败: {e}"
-
-@mcp.tool()
-async def list_directory(dir_path: str = ".") -> str:
-    """
-    列出目录内容
-    
-    Args:
-        dir_path: 目录路径
-    """
-    try:
-        path = safe_path(dir_path)
-        
-        if not path.exists():
-            return f"目录不存在: {dir_path}"
-        
-        if not path.is_dir():
-            return f"不是目录: {dir_path}"
-        
-        # 列出内容
-        output = f"目录: {dir_path}\n\n"
-        
-        for item in sorted(path.iterdir()):
-            if item.is_dir():
-                output += f"📁 {item.name}/\n"
-            else:
-                size = item.stat().st_size
-                output += f"📄 {item.name} ({size:,} bytes)\n"
-        
-        return output
-    
-    except ValueError as e:
-        return f"安全错误: {e}"
-    except Exception as e:
-        return f"列出失败: {e}"
-
-@mcp.tool()
-async def search_files(
-    dir_path: str,
-    pattern: str,
-    file_type: Optional[str] = None
-) -> str:
-    """
-    搜索文件
-    
-    Args:
-        dir_path: 搜索目录
-        pattern: 文件名模式（支持通配符）
-        file_type: 文件类型过滤
-    """
-    try:
-        path = safe_path(dir_path)
-        
-        # 搜索
-        results = []
-        for file_path in path.rglob(pattern):
-            if file_type and file_path.suffix != file_type:
-                continue
-            
-            results.append(file_path)
-        
-        # 格式化结果
-        output = f"搜索结果: {pattern}\n\n"
-        output += f"找到 {len(results)} 个文件\n\n"
-        
-        for file_path in results[:50]:  # 限制显示数量
-            rel_path = file_path.relative_to(path)
-            if file_path.is_dir():
-                output += f"📁 {rel_path}/\n"
-            else:
-                size = file_path.stat().st_size
-                output += f"📄 {rel_path} ({size:,} bytes)\n"
-        
-        if len(results) > 50:
-            output += f"\n... 还有 {len(results) - 50} 个文件"
-        
-        return output
-    
-    except ValueError as e:
-        return f"安全错误: {e}"
-    except Exception as e:
-        return f"搜索失败: {e}"
-
-@mcp.resource("file://{path}")
-def read_file_resource(path: str) -> str:
-    """文件资源"""
-    try:
-        file_path = safe_path(path)
-        return file_path.read_text(encoding='utf-8')
-    except Exception as e:
-        return f"读取失败: {e}"
-
-# 启动
-if __name__ == "__main__":
-    mcp.run()
-```
-
-### 1.3 API 集成 MCP Server
-
-API 集成 MCP Server，封装 REST API、GraphQL 支持、认证管理。
-
-```python
-"""
-API 集成 MCP Server
-"""
-from mcp.server.fastmcp import FastMCP
-import httpx
-from typing import Optional
-import json
-from datetime import datetime
-
-mcp = FastMCP("api-integration")
-
-# HTTP 客户端
-client = httpx.AsyncClient(
-    base_url="https://api.example.com",
-    timeout=30.0,
-    headers={
-        "Content-Type": "application/json",
-        "User-Agent": "MCP-API-Client/1.0"
-    }
-)
-
-# 认证
-API_KEY = "your-api-key"
-
-@mcp.tool()
-async def get_users(
-    page: int = 1,
-    limit: int = 10,
-    status: Optional[str] = None
-) -> str:
-    """
-    获取用户列表
-    
-    Args:
-        page: 页码
-        limit: 每页数量
-        status: 状态过滤
-    """
-    try:
-        params = {
-            "page": page,
-            "limit": limit
-        }
-        if status:
-            params["status"] = status
-        
-        response = await client.get(
-            "/users",
-            params=params,
-            headers={"Authorization": f"Bearer {API_KEY}"}
-        )
-        response.raise_for_status()
-        
-        data = response.json()
-        
-        output = f"用户列表 (第 {page} 页)\n\n"
-        output += f"总计: {data['total']}\n\n"
-        
-        for user in data['users']:
-            output += f"- {user['name']} ({user['email']})\n"
-            output += f"  状态: {user['status']}\n"
-            output += f"  创建时间: {user['created_at']}\n\n"
-        
-        return output
-    
-    except httpx.HTTPError as e:
-        return f"API 请求失败: {e}"
-    except Exception as e:
-        return f"获取用户失败: {e}"
-
-@mcp.tool()
-async def create_user(
-    name: str,
-    email: str,
-    role: str = "user"
-) -> str:
-    """
-    创建用户
-    
-    Args:
-        name: 用户名
-        email: 邮箱
-        role: 角色
-    """
-    try:
-        user_data = {
-            "name": name,
-            "email": email,
-            "role": role
-        }
-        
-        response = await client.post(
-            "/users",
-            json=user_data,
-            headers={"Authorization": f"Bearer {API_KEY}"}
-        )
-        response.raise_for_status()
-        
-        user = response.json()
-        
-        return f"用户创建成功:\n\nID: {user['id']}\n名称: {user['name']}\n邮箱: {user['email']}"
-    
-    except httpx.HTTPError as e:
-        return f"API 请求失败: {e}"
-    except Exception as e:
-        return f"创建用户失败: {e}"
-
-@mcp.tool()
-async def graphql_query(query: str, variables: Optional[dict] = None) -> str:
-    """
-    执行 GraphQL 查询
-    
-    Args:
-        query: GraphQL 查询语句
-        variables: 查询变量
-    """
-    try:
-        graphql_data = {
-            "query": query
-        }
-        if variables:
-            graphql_data["variables"] = variables
-        
-        response = await client.post(
-            "/graphql",
-            json=graphql_data,
-            headers={"Authorization": f"Bearer {API_KEY}"}
-        )
-        response.raise_for_status()
-        
-        result = response.json()
-        
-        if "errors" in result:
-            return f"GraphQL 错误:\n\n{json.dumps(result['errors'], indent=2)}"
-        
-        return json.dumps(result['data'], indent=2)
-    
-    except httpx.HTTPError as e:
-        return f"API 请求失败: {e}"
-    except Exception as e:
-        return f"GraphQL 查询失败: {e}"
-
-@mcp.resource("api://users/{user_id}")
-def get_user_resource(user_id: str) -> str:
-    """用户信息资源"""
-    import asyncio
-    
-    async def fetch():
-        response = await client.get(
-            f"/users/{user_id}",
-            headers={"Authorization": f"Bearer {API_KEY}"}
-        )
-        response.raise_for_status()
-        return response.json()
-    
-    try:
-        user = asyncio.get_event_loop().run_until_complete(fetch())
-        return json.dumps(user, indent=2)
-    except Exception as e:
-        return f"获取用户失败: {e}"
-
-# 清理
-@mcp.on_shutdown()
-async def cleanup():
-    """关闭 HTTP 客户端"""
-    await client.aclose()
-
-# 启动
-if __name__ == "__main__":
-    mcp.run()
-```
-
----
-
-## 2. 生态工具
+## 1. 生态工具
 
 ### 2.1 官方 Servers
 
@@ -697,7 +195,7 @@ mcp-skills update code-review-skill
 
 ---
 
-## 3. 前沿技术
+## 2. 前沿技术
 
 ### 3.1 MCP 协议演进
 
@@ -909,34 +407,35 @@ DID（去中心化身份）认证
 
 ---
 
+## 4. 参考资料
 
-### 官方文档
+### 4.1 官方文档
 
 - **MCP 官方文档**: https://modelcontextprotocol.io
 - **MCP 规范**: https://github.com/modelcontextprotocol/specification
 - **Python SDK**: https://github.com/modelcontextprotocol/python-sdk
 - **TypeScript SDK**: https://github.com/modelcontextprotocol/typescript-sdk
 
-### 学习资源
+### 4.2 学习资源
 
 - **Microsoft MCP for Beginners**: https://github.com/microsoft/mcp-for-beginners
 - **MCP 中文教程**: https://github.com/chenmingyong0423/mcp-tutorials
 - **MCP 资源集合**: https://github.com/cyanheads/model-context-protocol-resources
 
-### 官方 Servers
+### 4.3 官方 Servers
 
 - **GitHub Server**: https://github.com/modelcontextprotocol/servers/tree/main/src/github
 - **Filesystem Server**: https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem
 - **PostgreSQL Server**: https://github.com/modelcontextprotocol/servers/tree/main/src/postgres
 - **Playwright Server**: https://github.com/modelcontextprotocol/servers/tree/main/src/playwright
 
-### 社区资源
+### 4.4 社区资源
 
 - **MCP Discord**: https://discord.gg/mcp
 - **MCP GitHub Discussions**: https://github.com/modelcontextprotocol/specification/discussions
 - **Awesome MCP**: https://github.com/punkpeye/awesome-mcp-servers
 
-### 相关技术
+### 4.5 相关技术
 
 - **JSON-RPC 2.0**: https://www.jsonrpc.org/specification
 - **Server-Sent Events**: https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events
@@ -944,9 +443,9 @@ DID（去中心化身份）认证
 
 ---
 
-## 4. MCP 2026-07-28 安全与生产部署更新
+## 3. MCP 2026-07-28 安全与生产部署更新
 
-### 4.1 授权强化（Authorization Hardening）
+### 3.1 授权强化（Authorization Hardening）
 
 MCP 2026-07-28 规范通过六个 SEP 强化授权,使其更符合 OAuth 2.0 和 OpenID Connect 的实际部署。
 
@@ -1259,7 +758,7 @@ class ScopeManager:
         return new_token
 ```
 
-### 4.2 可观测性（Observability）
+### 3.2 可观测性（Observability）
 
 MCP 2026-07-28 规范正式弃用 Logging 特性,推荐使用 OpenTelemetry 进行结构化可观测性。
 
@@ -1468,7 +967,7 @@ async def process_data(data: str) -> dict:
         raise
 ```
 
-### 4.3 生产部署最佳实践（2026-07-28）
+### 3.3 生产部署最佳实践（2026-07-28）
 
 #### 无状态水平扩展
 
@@ -1851,7 +1350,7 @@ async def delete_all_data(context: RequestContext) -> dict:
     pass
 ```
 
-### 4.4 弃用特性迁移指南
+### 3.4 弃用特性迁移指南
 
 根据 MCP 2026-07-28 的特性生命周期政策,以下特性已弃用:
 

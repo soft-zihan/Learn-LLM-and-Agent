@@ -208,10 +208,10 @@ LLM 是 Agent 的核心决策引擎，负责：
 ```python
 # 不同 LLM 的 Agent 初始化示例
 
-# OpenAI GPT-4o
+# OpenAI GPT-5.2
 from langchain_openai import ChatOpenAI
 
-gpt4o = ChatOpenAI(
+gpt52 = ChatOpenAI(
     model="gpt-5.2",
     temperature=0,  # Agent 通常需要确定性输出
     api_key="your-api-key"

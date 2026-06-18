@@ -123,10 +123,10 @@
   - Temperature 和 Top-p 采样
   
 - 主流模型系列
-  - OpenAI GPT 系列（GPT-3.5/4/4o）
+  - OpenAI GPT 系列（GPT-5/5.2/5.5）
   - Anthropic Claude 系列
-  - Meta Llama 系列（Llama 2/3/3.1）
-  - Google Gemini 系列
+  - Meta Llama 系列（Llama 3.3/4）
+  - Google Gemini 系列（Gemini 2.5/3.1）
   - 中国模型：通义千问、文心一言、智谱 GLM
 
 **关键知识点**:
@@ -140,10 +140,10 @@ tokens = tokenizer.encode(text)
 print(f"Tokens: {tokens}")  # [15496, 11, 3135, 21873, 0]
 
 # 理解上下文窗口限制
-# GPT-3.5: 4K/16K tokens
-# GPT-4: 8K/32K tokens  
-# GPT-4 Turbo: 128K tokens
-# Claude 3: 200K tokens
+# GPT-5.2: 200K tokens
+# Claude 4.8: 200K tokens
+# Gemini 3.1: 1M tokens
+# Qwen 3: 256K tokens
 ```
 
 **延伸阅读**:

@@ -224,7 +224,7 @@ class Message(BaseModel):
         return v
 
 class ChatRequest(BaseModel):
-    model: str = Field(..., description="模型名称", example="gpt-3.5-turbo")
+    model: str = Field(..., description="模型名称", example="gpt-5.2")
     messages: List[Message] = Field(..., min_length=1, description="对话历史")
     temperature: float = Field(
         0.7, 

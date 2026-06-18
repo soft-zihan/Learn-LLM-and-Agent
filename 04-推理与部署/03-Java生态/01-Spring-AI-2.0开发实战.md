@@ -425,7 +425,7 @@ public class ChatClientExamples {
     public String chatWithOptions(String message) {
         // 2.0: 使用 mutate() 而非 copy()
         ChatOptions options = chatClient.getOptions().mutate()
-                .model("gpt-4o")
+                .model("gpt-5.2")
                 .temperature(0.7)
                 .maxTokens(2048)
                 .build();

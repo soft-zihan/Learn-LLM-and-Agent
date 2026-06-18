@@ -7,10 +7,10 @@
 ## 目录
 
 - [1. Skills 开发最佳实践](#1-skills-开发最佳实践)
-  - [2.1 什么是 Skills](#21-什么是-skills)
-  - [2.2 Skills 的两种范式](#22-skills-的两种范式)
-  - [2.3 Skills 设计原则](#23-skills-设计原则)
-  - [2.4 Skills 测试](#24-skills-测试)
+  - [1.1 什么是 Skills](#11-什么是-skills)
+  - [1.2 Skills 的两种范式](#12-skills-的两种范式)
+  - [1.3 Skills 设计原则](#13-skills-设计原则)
+  - [1.4 Skills 测试](#14-skills-测试)
 - [2. 安全与权限控制](#2-安全与权限控制)
 - [3. 生产部署](#3-生产部署)
 
@@ -18,7 +18,7 @@
 
 ## 1. Skills 开发最佳实践
 
-### 2.1 什么是 Skills
+### 1.1 什么是 Skills
 
 #### Skills 定义
 
@@ -134,7 +134,7 @@ results = await manager.execute_pipeline([
 ], context={"code": code, "language": "python"})
 ```
 
-### 2.2 Skills 的两种范式
+### 1.2 Skills 的两种范式
 
 Skills 有两种主流实现范式，适用于不同场景：
 
@@ -256,7 +256,7 @@ reference 文件容易被误写成百科式的知识文档。正确的写法是*
 - **`examples/`**：完整的输入 → 输出示例，校准 AI 的输出质量和格式
 - **`evals/`**：行为测试用例，验证 Skill 在边界情况下是否正确（空结果、无效输入、环境异常等）
 
-### 2.3 Skills 设计原则
+### 1.3 Skills 设计原则
 
 #### 单一职责
 
@@ -497,7 +497,7 @@ class CodeReviewSkill:
         # 实现...
 ```
 
-### 2.4 Skills 测试
+### 1.4 Skills 测试
 
 #### 单元测试
 

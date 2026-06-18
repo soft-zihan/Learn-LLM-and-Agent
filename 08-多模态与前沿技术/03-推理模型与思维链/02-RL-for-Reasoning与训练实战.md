@@ -648,11 +648,12 @@ class CostTracker:
                        prompt_tokens: int,
                        completion_tokens: int) -> float:
         """计算成本"""
+        # 注意：模型定价会频繁变动，请查阅各提供商最新文档
+        # 此处仅为示例结构
         pricing = {
-            "o1": {"input": 15.0, "output": 60.0},
             "o3": {"input": 60.0, "output": 240.0},
-            "o3-mini": {"input": 1.10, "output": 4.40},
-            "gpt-4o": {"input": 2.50, "output": 10.0}
+            "o4-mini": {"input": 1.10, "output": 4.40},
+            "gpt-5.2": {"input": 2.50, "output": 10.0}
         }
         
         price = pricing[model]
@@ -869,8 +870,8 @@ class GracefulDegradation:
     """优雅降级系统"""
     
     def __init__(self):
-        self.primary_model = "o1"
-        self.fallback_models = ["gpt-4o", "o3-mini", "gpt-3.5-turbo"]
+        self.primary_model = "o3"
+        self.fallback_models = ["gpt-5.2", "o4-mini", "gpt-5.5"]
     
     def solve_with_fallback(self, question: str) -> dict:
         """带降级的解题"""
@@ -1676,7 +1677,7 @@ class DynamicReasoningDepth:
         
         只输出数字:
         """
-        response = self.call_model("gpt-4o", prompt)
+        response = self.call_model("gpt-5.2", prompt)
         return float(response)
 ```
 

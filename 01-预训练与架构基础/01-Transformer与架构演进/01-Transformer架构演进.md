@@ -1673,13 +1673,13 @@ class TokenCostCalculator:
         self.model = model
         self.enc = tiktoken.encoding_for_model(model)
         
-        # 2025-2026 年价格（每 1M tokens）
+        # 注意：模型定价会频繁变动，请查阅各提供商最新文档
+        # 此处仅为示例结构
         self.pricing = {
-            "gpt-4": {"input": 30.0, "output": 60.0},
-            "gpt-4-turbo": {"input": 10.0, "output": 30.0},
-            "gpt-3.5-turbo": {"input": 0.5, "output": 1.5},
-            "claude-3-opus": {"input": 15.0, "output": 75.0},
-            "claude-3-sonnet": {"input": 3.0, "output": 15.0}
+            "gpt-5.2": {"input": 30.0, "output": 60.0},
+            "gpt-5.5": {"input": 10.0, "output": 30.0},
+            "claude-4-6": {"input": 15.0, "output": 75.0},
+            "claude-4-8": {"input": 3.0, "output": 15.0}
         }
     
     def count_tokens(self, text):
