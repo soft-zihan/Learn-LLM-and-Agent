@@ -93,6 +93,7 @@ def scan_open_source_projects(base_dir):
         'openai-agents-sdk': 'https://github.com/openai/openai-agents-python',
         'crewai': 'https://github.com/crewAIInc/crewAI',
         'learn-claude-code': 'https://github.com/jason19990103/learn-claude-code',
+        'ai-agents-from-zero': 'https://github.com/jackzhenguo/ai-agents-from-zero',
     }
     descriptions = {
         'Agent-Learning-Hub': 'Agent学习资源聚合项目，包含完整学习路线图、交互式网页、实战项目推荐',
@@ -117,6 +118,7 @@ def scan_open_source_projects(base_dir):
         'openai-agents-sdk': 'OpenAI官方Agent SDK',
         'crewai': '角色驱动的多Agent编排框架',
         'learn-claude-code': 'Claude Code源码深度解析',
+        'ai-agents-from-zero': 'AI智能体与大模型应用开发从零开始，28章系统教程+2个实战项目',
     }
     for dir_name, display_name in project_dirs:
         dir_path = os.path.join(projects_dir, dir_name)
@@ -181,8 +183,13 @@ python3 update-readme
     return True
 
 if __name__ == '__main__':
-    base_dir = os.path.dirname(os.path.abspath(__file__))
+    # 脚本在子目录中，需要回到项目根目录
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    base_dir = os.path.dirname(script_dir)  # 向上一级到项目根目录
+    
     print("="*60)
     print("更新 README.md")
+    print(f"脚本位置: {script_dir}")
+    print(f"项目根目录: {base_dir}")
     print("="*60)
     update_readme(base_dir)
