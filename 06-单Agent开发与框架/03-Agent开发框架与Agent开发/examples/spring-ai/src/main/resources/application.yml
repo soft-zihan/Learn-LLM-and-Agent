@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: spring-ai-agent-demo
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY}
+      base-url: ${OPENAI_BASE_URL}
+      chat:
+        options:
+          model: ${OPENAI_MODEL}
+          temperature: 0
+
+server:
+  port: 8080
+
+logging:
+  level:
+    com.example.agent: INFO
+    org.springframework.ai: WARN

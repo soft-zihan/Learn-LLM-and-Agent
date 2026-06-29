@@ -2,6 +2,7 @@
 
 从预训练到 Agent 工程化的完整学习路线，面向 AI 应用开发者的系统化教程。
 
+
 ## 教程目录
 
 ### 01 预训练与架构基础
@@ -291,14 +292,20 @@
   - 参考资料
 </details>
 <details>
-<summary>- 02-MCP协议详解与Server开发</summary>
+<summary>- 02-MCP协议基础与规范</summary>
   - MCP 协议基础概念
   - MCP 2026-07-28 规范重大更新
   - MCP 协议详解
+</details>
+<details>
+<summary>- 03-MCP-Server开发实战</summary>
   - MCP Server 开发（Python）
+  - MCP Server 开发（Java）
   - MCP Server 开发（TypeScript）
   - MCP Server 开发（Go）
-  - MCP Client 集成
+</details>
+<details>
+<summary>- 04-MCP新特性生态与安全</summary>
   - MCP 2026-07-28 新特性速查
   - 更多实战场景
   - 生态工具
@@ -307,34 +314,56 @@
   - MCP 2026-07-28 安全与生产部署更新
 </details>
 <details>
-<summary>- 03-Skills范式与实战</summary>
-  - Skills 开发最佳实践
-  - Inputs
-  - Decision Tree
-  - Main Workflow
-  - Output Files
+<summary>- 05-Skills核心概念与编写原则</summary>
+  - 什么是 Skills
+  - Skill 标准文件结构
+  - 工作流程
+  - 输出格式
+  - 注意事项
+  - Skill 编写六大原则
+  - 提取 PDF 文本
+  - 提取 PDF 文本
+  - 编码规范
+  - 代码审查
+  - 数据库迁移
+  - 什么是 JSON
+  - 我们的 JSON 输出格式
+  - 审查代码时
+  - 真实示例解析：skill-creator（官方教科书级）
+  - 与用户沟通
+  - 渐进式披露
+  - 如何思考改进
+  - 描述优化
+</details>
+<details>
+<summary>- 06-Skills五种设计模式实战</summary>
+  - 为什么需要设计模式
+  - 五种设计模式
+  - 核心规范
+  - 审查代码时
+  - 编写代码时
+  - 执行摘要
+  - 背景
+  - 方法论
+  - 发现
+  - 建议
+  - 风险
+  - 安全性
+  - 性能
+  - 可维护性
+  - 第一阶段——问题发现（每次只问一个问题，等待每个回答）
+  - 第二阶段——技术约束（仅在第一阶段完全回答后进行）
+  - 第三阶段——综合（仅在所有问题都回答后进行）
+  - 第一步——解析与清点
+  - 第二步——生成文档字符串
+  - 第三步——组装文档
+  - 第四步——质量检查
+  - 模式选择决策树
+  - 模式组合实战：LLMInternSkill 解析
   - Non-Negotiables
-  - 安全与权限控制
-  - 生产部署
-</details>
-
-**03-Agent框架与编排**
-<details>
-<summary>- 01-LangChain与LangGraph实践</summary>
-  - LangChain v1.0 核心变化与概念
-  - LangGraph v1.0 状态图与工作流编排
-  - 多 Agent 协作模式
-  - 最新特性与最佳实践（2025-2026）
-  - 实战案例：智能代码审查 Agent
-  - 参考资源
-  - 工作流编排模式
-  - 总览
-  - 按分类
-  - 实战项目
-  - 实战项目
 </details>
 <details>
-<summary>- 02-RAG进阶与Agentic-RAG</summary>
+<summary>- 07-RAG与Agentic-RAG</summary>
   - RAG 技术演进
   - 文档处理与分割
   - 向量数据库选型
@@ -349,95 +378,109 @@
   - Self-RAG 与 CRAG 实战
 </details>
 
-**04-Agent运行模式与工程化**
+**03-LangGraph与Agent工程化**
 <details>
-<summary>- 01-Harness-Engineering</summary>
-  - Harness Engineering 基础
-  - 核心组件
-  - AGENTS.md 与项目配置实战
-  - Minimal Harness 实战
-  - Superpowers 框架深度解析
-  - 高级 Harness 模式
-  - 验证与测试策略
-  - 可观测性与调试
-  - 生产级 Harness 设计
-  - 实战项目
-  - 项目概述
-  - 技术栈
+<summary>- 01-LangGraph框架</summary>
+  - LangGraph 是什么
+  - 核心概念：State、Nodes、Edges
+  - 构建你的第一个图
+  - 条件边与路由
+  - 工具调用 Agent
+  - 流式输出
+  - 检查点与持久化
+  - 人类介入（Human-in-the-Loop）
+  - 子图与嵌套图
+  - 并行执行与异步
+  - 错误处理与重试
+  - 生产级最佳实践
+  - 参考资源
 </details>
 <details>
-<summary>- 02-Loop-Engineering</summary>
-  - 从 Harness 到 Loop 的演进
-  - Loop Engineering 五大核心组件
+<summary>- 02-SpringAI-2.0框架</summary>
+  - Spring AI 2.0 核心变化
+  - ChatClient API
+  - Tool Calling 实战
+  - Agent 设计模式
+  - 记忆与上下文
+</details>
+<details>
+<summary>- 03-MCP客户端接入</summary>
+  - MCP 协议核心概念
+  - LangGraph 接入 MCP Server
+  - Spring AI 接入 MCP Server
+  - 实战案例
+  - 最佳实践
+</details>
+<details>
+<summary>- 04-Skills系统集成</summary>
+  - Skills 概念回顾
+  - 工作流程
+  - LangGraph 加载 Skills
+  - Spring AI 加载 Skills
+  - 实战案例
+  - 最佳实践
+</details>
+<details>
+<summary>- 05-提示词与上下文工程</summary>
+  - 提示词工程基础
+  - 上下文工程核心
+  - LangGraph 中的上下文管理
+  - Spring AI 中的上下文管理
+  - 实战案例
+  - 参考资源
+</details>
+<details>
+<summary>- 06-记忆系统设计</summary>
+  - 记忆系统架构
+  - LangGraph 的记忆实现
+  - 记忆检索与更新
+  - Spring AI 的记忆实现
+  - 自定义记忆系统
+  - 实战案例
+  - 参考资源
+</details>
+<details>
+<summary>- 07-智能体设计模式</summary>
+  - LangGraph 智能体架构
+  - 经典设计模式
+  - 工具链设计
+  - 验证与护栏
+</details>
+<details>
+<summary>- 08-循环与自演进</summary>
+  - Loop Engineering 概念
   - 生成器-评估器-规划器架构
   - Loop 实战模式
-  - Loop 的风险与治理
-  - Token 成本优化实战
-  - 最佳实践
-  - 总结：构建 Loop，但保持你是工程师
-  - 参考链接
+  - 风险与治理
+  - Token 成本优化
+  - Spring AI 循环与自演进实现
 </details>
-
-**05-生产部署与可观测性**
 <details>
-<summary>- 01-单Agent生产级最佳实践</summary>
-  - 生产环境架构设计
-  - 错误处理与恢复
-  - 性能优化
-  - 安全最佳实践
-  - 部署与运维
-  - 监控与告警
+<summary>- 09-子智能体与路由模式</summary>
+  - 子智能体概念
+  - 子智能体实现模式
+  - 路由模式
+  - Spring AI 子智能体与路由实现
+</details>
+<details>
+<summary>- 10-人机协作与中断恢复</summary>
+  - LangGraph 的中断机制
+  - 实战模式
+  - 实战案例
+  - Spring AI 人机协作实现
+</details>
+<details>
+<summary>- 11-测试与可观测性</summary>
   - 测试策略
-  - 参考资料
-  - 生产级进阶实践
-  - 生产级最佳实践
-</details>
-<details>
-<summary>- 02-Agent测试与可观测性工程</summary>
-  - Agent 测试策略
   - 可观测性工程
-  - 性能测试
-  - 安全测试
-  - 监控仪表板
-  - 告警规则
-  - 参考资料
-  - Agent 评估指标体系与基准测试
-  - 评估与测试
-  - 总览
-  - 按分类
+  - 实战工具
 </details>
-
-### 07 多 Agent 与 Agent 工程化
-
-**01-多Agent系统**
 <details>
-<summary>- 01-多Agent架构与协作模式</summary>
-  - 多 Agent 系统概述
-  - CrewAI 实战
-  - AutoGen/AG2 实战
-  - OpenAI Agents SDK 实战
-  - Google ADK 实战
-  - 多 Agent 通信与协调
-  - Agent 编排模式
-  - 最佳实践与陷阱
-  - 参考资料
-  - 工具调用深度实践
-  - Agent 评估与基准测试
-  - 解决方案
-  - 修改的文件
-  - 测试
-</details>
-
-**02-Agent编排与通信**
-<details>
-<summary>- 01-高级编排与Agent通信协议</summary>
-  - Agent 编排模式
-  - Agent 通信协议
-  - 高级通信模式
-  - 容错与恢复
-  - 监控与可观测性
+<summary>- 12-生产部署实践</summary>
+  - 架构设计
   - 性能优化
-  - 参考资料
+  - 安全实践
+  - 部署实战
 </details>
 
 ### 08 多模态与前沿技术
@@ -600,6 +643,6 @@
 python3 update-readme
 ```
 
-**统计**：38 个教程文档
+**统计**：46 个教程文档
 
 
